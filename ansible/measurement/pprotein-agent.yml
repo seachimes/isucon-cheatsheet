@@ -1,0 +1,99 @@
+---
+# pprotein-agent の導入/除去。
+# playbooks.yml からは import しない（分離・手動実行）。
+# 対象ホストを必須指定する。
+#
+#   導入: ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app
+#   除去: ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app -e measure_state=absent
+#
+# 前提: nginx（LTSV）と MySQL（スロークエリログ）が計測用に設定されていること。
+#       alp.yml / slp.yml を先に流すか、同等の設定を入れておく。
+#       エージェントは pprotein_agent_port（既定 19000）で listen し、
+#       pprotein サーバの targets.json から収集される。
+- hosts: "{{ measure_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  vars:
+    pprotein_ver: v1.2.4
+    # リリース資産のファイル名は v なしのバージョン（例: pprotein_1.2.4_linux_amd64.tar.gz）
+    pprotein_archive_ver: "{{ pprotein_ver | regex_replace('^v', '') }}"
+  tasks:
+    # ---- バイナリ ----
+    - name: pprotein をダウンロード
+      get_url:
+        url: "https://github.com/kaz/pprotein/releases/download/{{ pprotein_ver }}/pprotein_{{ pprotein_archive_ver }}_linux_{{ measure_arch }}.tar.gz"
+        dest: /tmp/pprotein.tar.gz
+      retries: 10
+      delay: 3
+      when: measure_state == 'present'
+
+    - name: 展開先ディレクトリを作成
+      file:
+        path: "{{ pprotein_extract_dir }}"
+        state: directory
+        mode: "0755"
+      when: measure_state == 'present'
+
+    - name: pprotein を展開
+      unarchive:
+        src: /tmp/pprotein.tar.gz
+        dest: "{{ pprotein_extract_dir }}"
+        remote_src: true
+      when: measure_state == 'present'
+
+    - name: pprotein-agent を /usr/local/bin へ配置
+      copy:
+        src: "{{ pprotein_extract_dir }}/pprotein-agent"
+        dest: "{{ pprotein_agent_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: measure_state == 'present'
+
+    # ---- systemd サービス ----
+    - name: pprotein-agent.service を配置
+      template:
+        src: ../templates/etc/systemd/system/pprotein-agent.service.j2
+        dest: "{{ pprotein_agent_service_path }}"
+        owner: root
+        mode: "0644"
+      when: measure_state == 'present'
+
+    - name: pprotein-agent を起動（自動起動を有効化）
+      systemd:
+        name: "{{ pprotein_agent_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: measure_state == 'present'
+
+    # ---- 除去 ----
+    - name: pprotein-agent を停止・自動起動を無効化
+      systemd:
+        name: "{{ pprotein_agent_service_name }}"
+        enabled: false
+        state: stopped
+        daemon_reload: true
+      failed_when: false
+      when: measure_state == 'absent'
+
+    - name: pprotein-agent.service を削除
+      file:
+        path: "{{ pprotein_agent_service_path }}"
+        state: absent
+      when: measure_state == 'absent'
+
+    - name: pprotein-agent バイナリを削除
+      file:
+        path: "{{ pprotein_agent_path }}"
+        state: absent
+      when: measure_state == 'absent'
+
+    - name: 展開ディレクトリを削除
+      file:
+        path: "{{ pprotein_extract_dir }}"
+        state: absent
+      when: measure_state == 'absent'
