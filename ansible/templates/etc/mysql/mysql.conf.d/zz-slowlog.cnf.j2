@@ -1,0 +1,8 @@
+# slp / pprotein が読み取る MySQL スロークエリログ
+[mysqld]
+slow_query_log = 1
+slow_query_log_file = {{ mysql_slowlog_file }}
+long_query_time = {{ mysql_slowlog_long_query_time }}
+log_queries_not_using_indexes = 1
+log_throttle_queries_not_using_indexes = 20
+log_output = FILE

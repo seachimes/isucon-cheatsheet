@@ -1,0 +1,14 @@
+server {
+  listen {{ nginx_listen }};
+
+  client_max_body_size {{ client_max_body_size }};
+  root {{ app_public_dir }};
+
+# 計測用: access_log を LTSV 形式にする（alp が読み取る）
+  access_log {{ nginx_access_log }} ltsv;
+
+  location / {
+    proxy_set_header Host $host;
+    proxy_pass http://localhost:{{ app_port }};
+  }
+}
