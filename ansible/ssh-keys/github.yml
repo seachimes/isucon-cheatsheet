@@ -1,0 +1,43 @@
+---
+# GitHub の公開鍵（https://github.com/<user>.keys）を対象ユーザーの
+# authorized_keys へ登録する。冪等。過去問の環境にそのまま流せる。
+#
+#   実行: ansible-playbook -i hosts ssh-keys/github.yml -e github_key_hosts=isu-app
+#   ユーザー変更: ansible-playbook -i hosts ssh-keys/github.yml \
+#                   -e github_key_hosts=isu-app \
+#                   -e '{"github_key_users":["wtnqk","seachimes"]}'
+#   対象ユーザー変更: -e github_key_target_user=ubuntu
+#
+# 前提:
+#   - 対象ホストへ SSH できること（ubuntu 等）。
+#   - ansible.posix コレクション（ansible パッケージに同梱。ansible-core のみの
+#     場合は `ansible-galaxy collection install ansible.posix`）。
+- hosts: "{{ github_key_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: 対象ユーザーを作成
+      ansible.builtin.user:
+        name: "{{ github_key_target_user }}"
+        create_home: true
+        shell: /bin/bash
+      when: github_key_create_user
+
+    - name: NOPASSWD sudo を付与
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/99-{{ github_key_target_user }}"
+        content: "{{ github_key_target_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"
+      when: github_key_grant_sudo
+
+    - name: GitHub 公開鍵を authorized_keys へ登録
+      ansible.posix.authorized_key:
+        user: "{{ github_key_target_user }}"
+        key: "https://github.com/{{ item }}.keys"
+        state: present
+      loop: "{{ github_key_users }}"

@@ -1,0 +1,19 @@
+---
+# GitHub の公開鍵を対象ユーザーへ登録するための共通変数。
+# すべて `-e key=value` の extra-vars で上書きできる。
+
+# 鍵を登録する GitHub ユーザー名のリスト。
+# https://github.com/<name>.keys を取得して authorized_keys へ追加する。
+github_key_users:
+  - wtnqk
+  - seachimes
+  - meron14725
+
+# 鍵を登録する対象ユーザー。
+github_key_target_user: isucon
+
+# 対象ユーザーが存在しない場合に作成するか。
+github_key_create_user: true
+
+# 対象ユーザーへ NOPASSWD sudo を付与するか。
+github_key_grant_sudo: true
