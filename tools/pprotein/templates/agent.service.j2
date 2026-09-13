@@ -1,0 +1,25 @@
+[Unit]
+Description=ISUCON pprotein log collector (loopback only)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/isucon-pprotein
+EnvironmentFile=/opt/isucon-pprotein/agent.env
+ExecStart=/opt/isucon-pprotein/agent
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

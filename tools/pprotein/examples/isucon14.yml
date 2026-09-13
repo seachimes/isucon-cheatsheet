@@ -1,0 +1,26 @@
+# Log paths observed on 2026-09-13. Confirm SHOW VARIABLES
+# LIKE 'slow_query_log_file' on each host before applying.
+all:
+  children:
+    pprotein_agents:
+      hosts:
+        isucon14-app1:
+          pprotein_slow_log: /var/log/mysql/mysql-slow.log
+          pprotein_tunnel_log_port: 19101
+          pprotein_tunnel_go_port: 19201
+        isucon14-app2:
+          pprotein_slow_log: /var/log/mysql/mysql-slow.log
+          pprotein_tunnel_log_port: 19102
+          pprotein_tunnel_go_port: 19202
+        isucon14-app3:
+          pprotein_slow_log: /var/log/mysql/mysql-slow.log
+          pprotein_tunnel_log_port: 19103
+          pprotein_tunnel_go_port: 19203
+      vars:
+        pprotein_http_log: /var/log/nginx/access.log
+        pprotein_agent_port: 19000
+        pprotein_go_port: 19001
+        pprotein_collect_http: true
+        pprotein_collect_sql: true
+        # Enable after adding the Go integration and deploying the application.
+        pprotein_collect_go: false

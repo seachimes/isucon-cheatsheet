@@ -1,0 +1,121 @@
+---
+- name: Deploy the loopback log agent to one server
+  hosts: pprotein_agents
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    agent_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_facts.architecture, 'unsupported') }}"
+    agent_binary: "{{ playbook_dir }}/../.artifacts/agent-linux-{{ agent_arch }}"
+  pre_tasks:
+    - name: Require an explicit single host, valid paths, and a unique change ID
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | length == 1
+          - ansible_facts.system == 'Linux'
+          - ansible_facts.service_mgr == 'systemd'
+          - agent_arch != 'unsupported'
+          - change_id is defined
+          - change_id is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$')
+          - pprotein_http_log is match('^/[A-Za-z0-9_./-]+$')
+          - pprotein_slow_log is match('^/[A-Za-z0-9_./-]+$')
+          - pprotein_agent_port | default(19000) | int >= 1024
+          - pprotein_agent_port | default(19000) | int <= 65535
+        fail_msg: Use --limit HOST and -e change_id=UNIQUE_ID; set absolute log paths.
+    - name: Check configured log files without changing permissions
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ ([pprotein_http_log] if pprotein_collect_http | default(false) else []) + ([pprotein_slow_log] if pprotein_collect_sql | default(false) else []) }}"
+      register: logs
+    - name: Refuse missing enabled log sources
+      ansible.builtin.assert:
+        that: item.stat.exists and item.stat.isreg
+        fail_msg: Verify the actual log path before deployment.
+      loop: "{{ logs.results }}"
+  tasks:
+    - name: Install persistent recovery tooling
+      ansible.builtin.file:
+        path: /var/lib/isucon-pprotein-manager
+        state: directory
+        mode: '0700'
+    - name: Place recovery helper
+      ansible.builtin.copy:
+        src: ../files/recovery.py
+        dest: /var/lib/isucon-pprotein-manager/recovery.py
+        mode: '0700'
+    - name: Snapshot existing agent files and service state before replacement
+      ansible.builtin.command:
+        argv: [python3, /var/lib/isucon-pprotein-manager/recovery.py, snapshot, "{{ change_id }}"]
+      when: not ansible_check_mode
+      changed_when: true
+    - name: Apply and validate with rollback on failure
+      block:
+        - name: Create agent directory
+          ansible.builtin.file:
+            path: /opt/isucon-pprotein
+            state: directory
+            mode: '0750'
+        - name: Copy the version-pinned locally built binary
+          ansible.builtin.copy:
+            src: "{{ agent_binary }}"
+            dest: /opt/isucon-pprotein/agent
+            owner: root
+            group: root
+            mode: '0750'
+          notify: Restart agent
+        - name: Configure log paths
+          ansible.builtin.template:
+            src: ../templates/agent.env.j2
+            dest: /opt/isucon-pprotein/agent.env
+            mode: '0600'
+          notify: Restart agent
+        - name: Install isolated service
+          ansible.builtin.template:
+            src: ../templates/agent.service.j2
+            dest: /etc/systemd/system/isucon-pprotein-agent.service
+            mode: '0644'
+          notify: Restart agent
+        - name: Apply service changes now
+          ansible.builtin.meta: flush_handlers
+        - name: Ensure the agent is running
+          ansible.builtin.systemd_service:
+            name: isucon-pprotein-agent
+            state: started
+            enabled: true
+            daemon_reload: true
+          when: not ansible_check_mode
+        - name: Verify loopback endpoint
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ pprotein_agent_port | default(19000) }}/healthz"
+            status_code: 204
+            use_proxy: false
+          register: health
+          until: health.status | default(0) == 204
+          retries: 5
+          delay: 1
+          when: not ansible_check_mode
+        - name: Verify enabled log files can be opened
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ pprotein_agent_port | default(19000) }}/debug/log/{{ item }}?seconds=0"
+            status_code: 200
+            use_proxy: false
+          loop: "{{ (['httplog'] if pprotein_collect_http | default(false) else []) + (['slowlog'] if pprotein_collect_sql | default(false) else []) }}"
+          when: not ansible_check_mode
+      rescue:
+        - name: Restore the pre-change agent
+          ansible.builtin.command:
+            argv: [python3, /var/lib/isucon-pprotein-manager/recovery.py, restore, "{{ change_id }}"]
+          when: not ansible_check_mode
+          changed_when: true
+        - name: Report failure even when rollback succeeded
+          ansible.builtin.fail:
+            msg: Deployment failed. Review rollback output and the recorded change ID.
+  handlers:
+    - name: Restart agent
+      ansible.builtin.systemd_service:
+        name: isucon-pprotein-agent
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      when: not ansible_check_mode

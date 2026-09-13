@@ -1,2 +1,7 @@
 .claude
 .serena
+tools/pprotein/.artifacts/
+tools/pprotein/.runs/
+tools/pprotein/.venv/
+tools/pprotein/data/
+__pycache__/
