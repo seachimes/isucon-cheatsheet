@@ -85,8 +85,8 @@
       get_url:
         url: "https://github.com/tkuchiki/alp/releases/download/{{ alp_ver }}/alp_linux_{{ measure_arch }}.tar.gz"
         dest: /tmp/alp.tar.gz
-        retries: 10
-        delay: 3
+      retries: 10
+      delay: 3
       when: measure_state == 'present'
 
     - name: alp を /usr/local/bin へ展開

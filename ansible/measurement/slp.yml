@@ -40,8 +40,8 @@
       get_url:
         url: "https://github.com/tkuchiki/slp/releases/download/{{ slp_ver }}/slp_linux_{{ measure_arch }}.tar.gz"
         dest: /tmp/slp.tar.gz
-        retries: 10
-        delay: 3
+      retries: 10
+      delay: 3
       when: measure_state == 'present'
 
     - name: slp を /usr/local/bin へ展開
