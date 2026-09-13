@@ -1,0 +1,19 @@
+[Unit]
+Description=pprotein-agent
+Documentation=https://github.com/kaz/pprotein
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ pprotein_work_dir }}
+Environment=PORT={{ pprotein_agent_port }}
+Environment=PPROTEIN_HTTPLOG={{ nginx_access_log }}
+Environment=PPROTEIN_SLOWLOG={{ mysql_slowlog_file }}
+Environment=PPROTEIN_GIT_REPOSITORY={{ pprotein_git_repository }}
+ExecStart={{ pprotein_agent_path }}
+Restart=always
+RestartSec=3
+User={{ pprotein_agent_user }}
+
+[Install]
+WantedBy=multi-user.target
