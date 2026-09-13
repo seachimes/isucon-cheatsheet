@@ -17,3 +17,7 @@ GitHub に登録した公開鍵（`https://github.com/<user>.keys`）を、対�
 
 - 手順書: [docs/ssh-keys.md](docs/ssh-keys.md)
 - 実体: [ansible/ssh-keys/](ansible/ssh-keys/)
+pprotein のエージェント（pprotein-agent）、計測ログのローテーションを Ansible で導入する。
+
+- 手順書: [docs/measurement-tools.md](docs/measurement-tools.md)
+- 実体: [ansible/measurement/](ansible/measurement/)

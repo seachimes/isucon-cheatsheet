@@ -35,3 +35,18 @@ mysql_service_name: mysql
 
 # ---- ログローテーション ----
 rotate_script_path: /usr/local/bin/rotate-measure-logs.sh
+
+# ---- pprotein-agent ----
+# エージェントのバイナリ / systemd ユニット
+pprotein_agent_path: /usr/local/bin/pprotein-agent
+pprotein_agent_service_name: pprotein-agent
+pprotein_agent_service_path: /etc/systemd/system/pprotein-agent.service
+# エージェントが listen するポート（pprotein サーバの targets.json から参照する）
+pprotein_agent_port: 19000
+# nginx / mysql のログを読むため root で動かす（ログの権限を避ける）
+pprotein_agent_user: root
+# 作業ディレクトリと git リポジトリ（ソース表示に使う。アプリのリポジトリを指定する）
+pprotein_work_dir: /home/isucon
+pprotein_git_repository: /home/isucon
+# ダウンロードした tarball の展開先（一時）
+pprotein_extract_dir: /tmp/pprotein

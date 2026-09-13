@@ -9,6 +9,7 @@ Ansible の独立 playbook として実行する。`playbooks.yml` からは imp
 | --- | --- | --- |
 | [alp](https://github.com/tkuchiki/alp) | nginx のアクセスログ（LTSV）を解析し、URI ごとの本数・レスポンスタイム・ボトルネックを可視化する | nginx の `access_log` を LTSV 形式にする |
 | [slp](https://github.com/tkuchiki/slp) | MySQL のスロークエリログを解析し、重いクエリを可視化する | MySQL のスロークエリログを有効化する |
+| [pprotein-agent](https://github.com/kaz/pprotein) | nginx / MySQL のログや pprof を pprotein サーバへ提供するエージェント | alp / slp 相当のログ設定（LTSV・スロークエリログ） |
 | rotate-measure-logs.sh | ベンチ前後に計測ログを退避し、計測区間ごとのログを分離する | alp / slp を導入済みであること |
 
 ## ディレクトリ構成
@@ -21,12 +22,14 @@ ansible/
     ├── vars.yml                      # 共通変数（プレースホルダ）
     ├── alp.yml                       # alp の導入/除去
     ├── slp.yml                       # slp の導入/除去
+    ├── pprotein-agent.yml            # pprotein-agent の導入/除去
     └── rotate.yml                    # ローテーションスクリプトの配置/削除
 ├── files/
 │   └── etc/nginx/conf.d/log_format.conf          # LTSV の log_format
 └── templates/
     ├── etc/nginx/sites-available/isucon.measure.conf.j2   # 計測用 site conf
     ├── etc/mysql/mysql.conf.d/zz-slowlog.cnf.j2           # スロークエリ設定
+    ├── etc/systemd/system/pprotein-agent.service.j2       # pprotein-agent の unit
     └── usr/local/bin/rotate-measure-logs.sh.j2            # ローテーション
 ```
 
@@ -148,6 +151,64 @@ slp my print-output-options
 - `-f, --filters` … `Query` / `QueryTime` / `RowsExamined` などで絞り込み
 - `--pos=FILE` … 追記分だけを解析
 
+## pprotein-agent の導入
+
+競技用サーバに常駐させ、nginx / MySQL のログや pprof を pprotein サーバから
+収集できるようにする。pprotein 本体（サーバ）は別ホストに置き、競技用サーバとは
+SSH ポートフォワーディングで接続する運用を想定する。
+
+### 手順
+
+```sh
+cd ansible
+ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app
+```
+
+この playbook は以下を行う。
+
+1. `pprotein-agent` バイナリをダウンロードして `/usr/local/bin` へ配置
+2. `pprotein-agent.service`（systemd ユニット）を配置
+3. サービスを起動し、自動起動を有効化
+
+### 設定
+
+systemd ユニットは次の環境変数を設定する。いずれも `measurement/vars.yml` で変更できる。
+
+- `PORT` … エージェントが listen するポート（`pprotein_agent_port`、既定 `19000`）
+- `PPROTEIN_HTTPLOG` … nginx のアクセスログ（`nginx_access_log`）
+- `PPROTEIN_SLOWLOG` … MySQL のスロークエリログ（`mysql_slowlog_file`）
+- `PPROTEIN_GIT_REPOSITORY` … ソース表示に使う git リポジトリ（`pprotein_git_repository`）
+
+エージェントはログファイルを読むため `pprotein_agent_user`（既定 `root`）で動かす。
+
+### 使い方
+
+pprotein サーバの `group/targets` に、競技用サーバのエージェントのエンドポイントを登録する。
+
+```json
+[
+  { "Type": "httplog", "Label": "nginx", "URL": "http://<agent-host>:19000/debug/log/httplog", "Duration": 60 },
+  { "Type": "slowlog", "Label": "mysql", "URL": "http://<agent-host>:19000/debug/log/slowlog", "Duration": 60 },
+  { "Type": "pprof",   "Label": "app",   "URL": "http://<agent-host>:19000/debug/pprof/profile", "Duration": 60 }
+]
+```
+
+別ホストの pprotein から収集する場合は、SSH ポートフォワーディングで経路を作る。
+
+```sh
+# pprotein サーバ側から競技用サーバへ（19001 -> 19000 の例）
+ssh -L 19001:localhost:19000 -R 18080:localhost:80 isucon@<競技用サーバのIP>
+```
+
+エージェントが公開するエンドポイント:
+
+- `/debug/log/httplog` … nginx アクセスログ（LTSV）
+- `/debug/log/slowlog` … MySQL スロークエリログ
+- `/debug/fgprof`, `/debug/pprof/*` … プロファイリング
+
+> アプリ本体の pprof を収集するには、アプリ側に pprotein の integration ライブラリを組み込むか、
+> `standalone.Integrate(":19000")` をアプリ内で起動する。エージェント単体で取れるのはログのみ。
+
 ## ログローテーション
 
 ベンチ実行の直前にスクリプトを実行すると、その時点までのログが退避され、
@@ -188,13 +249,15 @@ ls -l /var/log/mysql/mysql-slow.log.*
 
 ```sh
 cd ansible
-ansible-playbook -i hosts measurement/alp.yml    -e measure_hosts=isu-app -e measure_state=absent
-ansible-playbook -i hosts measurement/slp.yml    -e measure_hosts=isu-app -e measure_state=absent
-ansible-playbook -i hosts measurement/rotate.yml -e measure_hosts=isu-app -e measure_state=absent
+ansible-playbook -i hosts measurement/alp.yml           -e measure_hosts=isu-app -e measure_state=absent
+ansible-playbook -i hosts measurement/slp.yml           -e measure_hosts=isu-app -e measure_state=absent
+ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app -e measure_state=absent
+ansible-playbook -i hosts measurement/rotate.yml        -e measure_hosts=isu-app -e measure_state=absent
 ```
 
 - alp: 計測用 site conf をバックアップから復元（バックアップが無ければ削除）、`log_format.conf` と `alp` を削除
 - slp: `zz-slowlog.cnf` と `slp` を削除し、MySQL を再起動
+- pprotein-agent: サービスを停止・無効化し、ユニットとバイナリを削除
 - rotate: `rotate-measure-logs.sh` を削除
 
 ## 変数一覧
@@ -221,8 +284,17 @@ ansible-playbook -i hosts measurement/rotate.yml -e measure_hosts=isu-app -e mea
 | `mysql_slowlog_long_query_time` | `0.05` | 記録する閾値（秒） |
 | `mysql_service_name` | `mysql` | MySQL のサービス名 |
 | `rotate_script_path` | `/usr/local/bin/rotate-measure-logs.sh` | ローテーションスクリプト |
+| `pprotein_agent_path` | `/usr/local/bin/pprotein-agent` | エージェントのバイナリ |
+| `pprotein_agent_service_name` | `pprotein-agent` | systemd サービス名 |
+| `pprotein_agent_service_path` | `/etc/systemd/system/pprotein-agent.service` | systemd ユニット |
+| `pprotein_agent_port` | `19000` | エージェントの listen ポート |
+| `pprotein_agent_user` | `root` | サービスの実行ユーザ |
+| `pprotein_work_dir` | `/home/isucon` | 作業ディレクトリ |
+| `pprotein_git_repository` | `/home/isucon` | ソース表示に使う git リポジトリ |
+| `pprotein_extract_dir` | `/tmp/pprotein` | tarball の展開先（一時） |
 | `alp_ver` | `v1.0.21` | alp のバージョン（alp.yml 内） |
 | `slp_ver` | `v0.2.1` | slp のバージョン（slp.yml 内） |
+| `pprotein_ver` | `v1.2.4` | pprotein のバージョン（pprotein-agent.yml 内） |
 
 ## 注意
 
@@ -232,3 +304,7 @@ ansible-playbook -i hosts measurement/rotate.yml -e measure_hosts=isu-app -e mea
 - slp 導入・除去では MySQL を再起動する。接続断が許容されるタイミングで実行する。
 - スロークエリログはディスクを消費する。計測後は `measure_state=absent` で戻すか、
   ログを退避して削除する。
+- pprotein-agent は既定で `root` として動作し、`19000` 番で listen する。外部に公開せず、
+  pprotein サーバからの SSH ポートフォワーディング経由でアクセスする。
+- ログをローテーションすると、エージェントが追従しているファイル（inode）が変わる。
+  収集前に `rotate-measure-logs.sh` を実行する運用と相性がよい。

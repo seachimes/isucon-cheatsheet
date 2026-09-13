@@ -1,0 +1,11 @@
+# isucon14 の競技環境。
+#   -i inventories/isucon14
+#
+# pprotein_agent_label は pprotein-infra の agent_hosts（["1","2","3"]）に対応。
+[app]
+isucon14-app1 pprotein_agent_label=1
+isucon14-app2 pprotein_agent_label=2
+isucon14-app3 pprotein_agent_label=3
+
+[bench]
+isucon14-bench

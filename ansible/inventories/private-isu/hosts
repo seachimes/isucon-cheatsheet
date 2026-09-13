@@ -1,0 +1,7 @@
+# private-isu の競技環境（EC2）。使うときだけ差し替える。
+#   -i inventories/private-isu
+[app]
+isu-app
+
+[bench]
+isu-bench
