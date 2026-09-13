@@ -1,0 +1,109 @@
+---
+# ALP (Access Log Profiler) の導入/除去。
+# playbooks.yml からは import しない（分離・手動実行）。
+# 対象ホストを必須指定する。
+#
+#   導入: ansible-playbook -i hosts measurement/alp.yml -e measure_hosts=isu-app
+#   除去: ansible-playbook -i hosts measurement/alp.yml -e measure_hosts=isu-app -e measure_state=absent
+#
+# 前提: nginx がアプリのリバースプロキシとして動作していること。
+- hosts: "{{ measure_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  vars:
+    alp_ver: v1.0.21
+  tasks:
+    # ---- nginx LTSV ログ（alp の前提） ----
+    - name: 現在の site conf を確認
+      stat:
+        path: "{{ nginx_site_path }}"
+      register: alp_site_conf
+
+    - name: 元の site conf をバックアップ（初回のみ）
+      copy:
+        src: "{{ nginx_site_path }}"
+        dest: "{{ nginx_site_backup }}"
+        remote_src: true
+        force: false
+      when:
+        - measure_state == 'present'
+        - alp_site_conf.stat.exists
+
+    - name: LTSV の log_format を配置
+      copy:
+        src: ../files/etc/nginx/conf.d/log_format.conf
+        dest: "{{ nginx_log_format_path }}"
+        owner: root
+        mode: "0644"
+      when: measure_state == 'present'
+
+    - name: LTSV の log_format を削除
+      file:
+        path: "{{ nginx_log_format_path }}"
+        state: absent
+      when: measure_state == 'absent'
+
+    - name: 計測用 site conf を配置（access_log ltsv）
+      template:
+        src: ../templates/etc/nginx/sites-available/isucon.measure.conf.j2
+        dest: "{{ nginx_site_path }}"
+        owner: root
+        mode: "0644"
+      when: measure_state == 'present'
+
+    - name: バックアップの有無を確認
+      stat:
+        path: "{{ nginx_site_backup }}"
+      register: alp_site_backup
+      when: measure_state == 'absent'
+
+    - name: 元の site conf を復元
+      copy:
+        src: "{{ nginx_site_backup }}"
+        dest: "{{ nginx_site_path }}"
+        remote_src: true
+        mode: "0644"
+      when:
+        - measure_state == 'absent'
+        - alp_site_backup.stat.exists | default(false)
+
+    - name: 計測用 site conf を削除（バックアップなし）
+      file:
+        path: "{{ nginx_site_path }}"
+        state: absent
+      when:
+        - measure_state == 'absent'
+        - not (alp_site_backup.stat.exists | default(false))
+
+    - name: nginx 設定を検証してリロード
+      shell: /usr/sbin/nginx -t && systemctl reload nginx
+
+    # ---- alp バイナリ ----
+    - name: alp をダウンロード
+      get_url:
+        url: "https://github.com/tkuchiki/alp/releases/download/{{ alp_ver }}/alp_linux_{{ measure_arch }}.tar.gz"
+        dest: /tmp/alp.tar.gz
+      retries: 10
+      delay: 3
+      when: measure_state == 'present'
+
+    - name: alp を /usr/local/bin へ展開
+      unarchive:
+        src: /tmp/alp.tar.gz
+        dest: /usr/local/bin
+        remote_src: true
+      when: measure_state == 'present'
+
+    - name: alp に実行権限を付与
+      file:
+        path: /usr/local/bin/alp
+        mode: "0755"
+      when: measure_state == 'present'
+
+    - name: alp を削除
+      file:
+        path: /usr/local/bin/alp
+        state: absent
+      when: measure_state == 'absent'

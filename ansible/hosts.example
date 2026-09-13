@@ -1,0 +1,15 @@
+# inventory のサンプル。hosts にコピーして自分の環境に合わせて編集する。
+#   cp hosts.example hosts
+#
+# measure_hosts に指定するグループ名/ホスト名をここで定義する。
+# 例: -e measure_hosts=isu-app / -e measure_hosts=app
+
+[app]
+isu-app
+
+[bench]
+isu-bench
+
+# app と bench を兼ねる all-in-one 構成の例
+# [allinone]
+# isu-app
