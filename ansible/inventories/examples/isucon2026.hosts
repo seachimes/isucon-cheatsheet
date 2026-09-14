@@ -1,0 +1,13 @@
+# isucon2026（本番）の競技環境。テンプレート。
+#
+#   cp inventories/examples/isucon2026.hosts inventories/isucon2026/hosts
+#   ansible-playbook -i inventories/isucon2026 measurement/pprotein-agent.yml \
+#     -e measure_hosts=app -e @envs/isucon2026.yml
+#
+# EC2 のアドレスに差し替える。ユーザ・鍵は ansible_host / ansible_user か
+# ~/.ssh/config で指定する。
+[app]
+# isucon2026-app1 ansible_host=<ec2-ip> ansible_user=isucon
+
+[bench]
+# isucon2026-bench ansible_host=<ec2-ip> ansible_user=isucon

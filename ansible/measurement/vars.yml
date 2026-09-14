@@ -1,7 +1,9 @@
 ---
-# 計測ツール（alp / slp / ログローテーション）導入の共通変数。
-# すべて `-e key=value` の extra-vars で上書きできる。
-# 環境に合わせて書き換えるか、実行時に -e で渡すこと。
+# 計測ツール（alp / slp / ログローテーション / pprotein-agent）の**プラットフォーム既定値**。
+# 環境ごとの差分は envs/<env>.yml に置き、-e @envs/<env>.yml で上書きする
+# （extra-vars はこの vars_files より優先される）。
+# 例: ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml \
+#        -e measure_hosts=app -e @envs/private-isu.yml
 
 # present: 導入 / absent: 除去
 measure_state: present

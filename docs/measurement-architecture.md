@@ -3,6 +3,11 @@
 リリース戦略と、pprotein サーバ・エージェント・EC2・VPC の関係をまとめる。
 個別の導入手順は [pprotein-server.md](pprotein-server.md) / [measurement-tools.md](measurement-tools.md) を参照。
 
+計測基盤は**環境非依存**に作る。**pprotein サーバは1台を全環境で使い回し**、競技環境
+（private-isu / isucon14 / isucon2026 …）だけを差し替える。同時に試行しないため、
+サーバは1台で足りる。切り替えは inventory と環境プロファイルの差し替えで行う
+（[環境の差し替え](#環境の差し替え)）。
+
 ## リリース戦略
 
 配布元はフォークの [`seachimes/pprotein`](https://github.com/seachimes/pprotein)。
@@ -50,7 +55,7 @@ flowchart TB
     ppro["pprotein :9000<br/>alp / slp / graphviz"]
   end
 
-  subgraph aws["AWS VPC（競技環境 / private-isu）"]
+  subgraph aws["AWS VPC（競技環境・例: private-isu）"]
     igw["Internet Gateway"]
     subgraph subnet["public subnet"]
       app["EC2: 競技用サーバ<br/>pprotein-agent :19000"]
@@ -104,18 +109,46 @@ flowchart TB
 | pprotein（サーバ） | Linode（Akamai） | 9000 | UI + 収集サーバ。alp/slp/graphviz で解析 | `pprotein-server/deploy.yml` |
 | cloudflared（サーバ） | Linode | — | Tunnel で UI/SSH を公開 | cloud-init（`pprotein-infra`） |
 | pprotein-agent | EC2（競技用サーバ） | 19000 | nginx/MySQL ログ・pprof を提供 | `measurement/pprotein-agent.yml` |
-| ベンチマーカー | EC2 | — | 負荷生成（計測対象外） | private-isu provisioning |
+| ベンチマーカー | EC2 | — | 負荷生成（計測対象外） | 環境ごと（例: private-isu provisioning） |
 
 - エージェントは競技用サーバに**同居**し、ログファイルを読むため `root` で動く。
 - サーバ側の `alp` / `slp` / `graphviz` は**サーバ側**で実行する（agent には不要）。
 
-## EC2 / VPC（競技環境）
+## 環境の差し替え
 
-競技環境は CloudFormation（private-isu `provisioning/cf.yaml`）で構築する。
+環境は2つの部品で表現する。詳細は [ansible/README.md](../ansible/README.md)。
+
+| 部品 | 場所 | 内容 |
+| --- | --- | --- |
+| 共有サーバ | `ansible/inventories/pprotein_server/hosts` | pprotein サーバ（Tunnel SSH）。全環境共通 |
+| 競技環境 | `ansible/inventories/<env>/hosts` | 競技用サーバ（`[app]` / `[bench]`） |
+| 環境プロファイル | `ansible/envs/<env>.yml` | nginx サイト名・公開ディレクトリ・ログパス・git リポジトリなど |
+
+```sh
+# private-isu に向ける
+ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml \
+  -e measure_hosts=app -e @envs/private-isu.yml
+
+# isucon14 に向ける（サーバはそのまま）
+ansible-playbook -i inventories/isucon14 measurement/pprotein-agent.yml \
+  -e measure_hosts=app -e @envs/isucon14.yml
+```
+
+- サーバ側（`pprotein-server/*`）は**全環境で共通**。環境ごとに触らない。
+- 収集先（targets）は、その環境のエージェントを pprotein サーバに登録して切り替える。
+- `hosts` は環境固有なので gitignore 済み。`inventories/examples/` をコピーして使う。
+
+## EC2 / VPC（競技環境の例）
+
+競技環境の構成は環境ごとに異なる。ここでは private-isu を例に示す
+（CloudFormation `provisioning/cf.yaml`）。
 
 - `VPC` + `public subnet` + `Internet Gateway` + `RouteTable`（0.0.0.0/0 → IGW）
 - `ServerInstance`（競技用サーバ = エージェント同居）と `BenchmarkerInstance` の2台
 - それぞれ `EIP`（固定グローバル IP）と `SecurityGroup`
+
+isucon14 / isucon2026 なども同様に、競技用サーバ（エージェント同居）とベンチマーカーが
+あれば、inventory と環境プロファイルを差し替えるだけで計測基盤を適用できる。
 
 pprotein サーバは別クラウド（Linode）にあるため、エージェントへの収集経路が必要。
 

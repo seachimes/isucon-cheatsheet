@@ -4,7 +4,7 @@
 # cloudflared（Cloudflare Tunnel）は Terraform（pprotein-infra）の cloud-init が導入済み。
 # アプリ（pprotein / alp / slp）の配置と更新は deploy.yml が担当する。
 #
-#   構築: ansible-playbook -i hosts pprotein-server/bootstrap.yml -e pprotein_server_hosts=pprotein_server
+#   構築: ansible-playbook -i inventories/pprotein_server pprotein-server/bootstrap.yml -e pprotein_server_hosts=pprotein_server
 #
 # 前提:
 #   - Terraform（pprotein-infra）でインスタンス + cloud-init が適用済み。

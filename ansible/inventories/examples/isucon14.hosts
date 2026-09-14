@@ -1,0 +1,14 @@
+# isucon14 の競技環境。
+#
+#   cp inventories/examples/isucon14.hosts inventories/isucon14/hosts
+#   ansible-playbook -i inventories/isucon14 measurement/pprotein-agent.yml \
+#     -e measure_hosts=app -e @envs/isucon14.yml
+#
+# ホスト名は ~/.ssh/config の Host と揃える（鍵・ユーザはそこで解決）。
+[app]
+isucon14-app1
+isucon14-app2
+isucon14-app3
+
+[bench]
+isucon14-bench

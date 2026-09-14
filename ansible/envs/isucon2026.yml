@@ -1,0 +1,20 @@
+---
+# isucon2026（本番）環境の計測ツール設定。テンプレート。
+# 実際の環境に合わせて値を埋める。
+#   -e @envs/isucon2026.yml
+measure_arch: amd64
+
+# nginx（alp の前提）
+nginx_site_name: isucon          # TODO: sites-available の設定名
+nginx_access_log: /var/log/nginx/access.log
+nginx_listen: "80"
+client_max_body_size: 10m
+app_public_dir: /home/isucon/webapp/public/   # TODO
+app_port: 8080
+
+# MySQL（slp の前提）
+mysql_slowlog_file: /var/log/mysql/mysql-slow.log
+
+# pprotein-agent
+pprotein_work_dir: /home/isucon
+pprotein_git_repository: /home/isucon/webapp  # TODO

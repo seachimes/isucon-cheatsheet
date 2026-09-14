@@ -1,0 +1,20 @@
+---
+# isucon14 環境の計測ツール設定。
+# measurement/vars.yml（プラットフォーム既定）を上書きする。
+#   -e @envs/isucon14.yml
+measure_arch: amd64
+
+# nginx（alp の前提）
+nginx_site_name: isuride
+nginx_access_log: /var/log/nginx/access.log
+nginx_listen: "80"
+client_max_body_size: 10m
+app_public_dir: /home/isucon/webapp/public/
+app_port: 8080
+
+# MySQL（slp の前提）
+mysql_slowlog_file: /var/log/mysql/mysql-slow.log
+
+# pprotein-agent
+pprotein_work_dir: /home/isucon
+pprotein_git_repository: /home/isucon/webapp

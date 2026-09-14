@@ -17,40 +17,61 @@ Ansible の独立 playbook として実行する。`playbooks.yml` からは imp
 ```
 ansible/
 ├── ansible.cfg
-├── hosts.example                     # inventory のサンプル
-└── measurement/
-    ├── vars.yml                      # 共通変数（プレースホルダ）
-    ├── alp.yml                       # alp の導入/除去
-    ├── slp.yml                       # slp の導入/除去
-    ├── pprotein-agent.yml            # pprotein-agent の導入/除去
-    └── rotate.yml                    # ローテーションスクリプトの配置/削除
+├── inventories/                          # 環境ごとの inventory（hosts は gitignore）
+│   ├── pprotein_server/hosts             # 共有サーバ（全環境共通）
+│   ├── private-isu/hosts                 # 競技環境（[app] / [bench]）
+│   └── examples/                         # 例（-i 対象外。コピーして使う）
+│       ├── pprotein_server.hosts
+│       ├── private-isu.hosts
+│       ├── isucon14.hosts
+│       └── isucon2026.hosts
+├── envs/                                 # 環境プロファイル（環境差分の変数）
+│   ├── private-isu.yml
+│   ├── isucon14.yml
+│   └── isucon2026.yml
+├── measurement/
+│   ├── vars.yml                          # プラットフォーム既定値
+│   ├── alp.yml                           # alp の導入/除去
+│   ├── slp.yml                           # slp の導入/除去
+│   ├── pprotein-agent.yml                # pprotein-agent の導入/除去
+│   └── rotate.yml                        # ローテーションスクリプトの配置/削除
+├── pprotein-server/                      # 計測サーバ（全環境で共有）
+│   ├── bootstrap.yml
+│   ├── deploy.yml
+│   └── vars.yml
 ├── files/
 │   └── etc/nginx/conf.d/log_format.conf          # LTSV の log_format
 └── templates/
     ├── etc/nginx/sites-available/isucon.measure.conf.j2   # 計測用 site conf
     ├── etc/mysql/mysql.conf.d/zz-slowlog.cnf.j2           # スロークエリ設定
     ├── etc/systemd/system/pprotein-agent.service.j2       # pprotein-agent の unit
+    ├── etc/systemd/system/pprotein.service.j2             # pprotein サーバの unit
     └── usr/local/bin/rotate-measure-logs.sh.j2            # ローテーション
 ```
 
 ## 事前準備
 
-1. inventory を作成する。
+計測基盤は環境非依存。**pprotein サーバ1台を全環境で共有**し、競技環境だけを
+inventory と環境プロファイルで差し替える（[measurement-architecture.md](measurement-architecture.md#環境の差し替え)）。
+
+1. 使う環境の inventory とプロファイルを用意する。
 
    ```sh
    cd ansible
-   cp hosts.example hosts
+   cp inventories/examples/pprotein_server.hosts inventories/pprotein_server/hosts   # 共有サーバ（一度だけ）
+   cp inventories/examples/private-isu.hosts        inventories/private-isu/hosts
    ```
 
-   対象ホスト（グループ）を `hosts` に書く。以降の例では `isu-app` を対象にする。
+   対象ホスト（`[app]` / `[bench]`）を `inventories/<env>/hosts` に書く。
 
-2. 環境固有の値は `measurement/vars.yml` を編集するか、実行時に `-e` で渡す。
+2. 環境差分（nginx サイト名・公開ディレクトリ・ログパス・git リポジトリ）は
+   `envs/<env>.yml` に書く。プラットフォーム既定は `measurement/vars.yml`。
    主な変数は [変数一覧](#変数一覧) を参照。
 
 3. Ansible 実行前に SSH 疎通を確認する。
 
    ```sh
-   ansible -i hosts isu-app -m ping
+   ansible -i inventories/private-isu app -m ping
    ```
 
 ## alp の導入
@@ -59,7 +80,7 @@ ansible/
 
 ```sh
 cd ansible
-ansible-playbook -i hosts measurement/alp.yml -e measure_hosts=isu-app
+ansible-playbook -i inventories/private-isu measurement/alp.yml -e measure_hosts=app -e @envs/private-isu.yml
 ```
 
 この playbook は以下を行う。
@@ -109,7 +130,7 @@ alp ltsv --file /var/log/nginx/access.log \
 
 ```sh
 cd ansible
-ansible-playbook -i hosts measurement/slp.yml -e measure_hosts=isu-app
+ansible-playbook -i inventories/private-isu measurement/slp.yml -e measure_hosts=app -e @envs/private-isu.yml
 ```
 
 この playbook は以下を行う。
@@ -165,7 +186,7 @@ SSH ポートフォワーディングで接続する運用を想定する。
 
 ```sh
 cd ansible
-ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app
+ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml -e measure_hosts=app -e @envs/private-isu.yml
 ```
 
 この playbook は以下を行う。
@@ -222,7 +243,7 @@ ssh -L 19001:localhost:19000 -R 18080:localhost:80 isucon@<競技用サーバの
 
 ```sh
 cd ansible
-ansible-playbook -i hosts measurement/rotate.yml -e measure_hosts=isu-app
+ansible-playbook -i inventories/private-isu measurement/rotate.yml -e measure_hosts=app -e @envs/private-isu.yml
 ```
 
 ### 使い方
@@ -253,10 +274,10 @@ ls -l /var/log/mysql/mysql-slow.log.*
 
 ```sh
 cd ansible
-ansible-playbook -i hosts measurement/alp.yml           -e measure_hosts=isu-app -e measure_state=absent
-ansible-playbook -i hosts measurement/slp.yml           -e measure_hosts=isu-app -e measure_state=absent
-ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app -e measure_state=absent
-ansible-playbook -i hosts measurement/rotate.yml        -e measure_hosts=isu-app -e measure_state=absent
+ansible-playbook -i inventories/private-isu measurement/alp.yml           -e measure_hosts=app -e @envs/private-isu.yml -e measure_state=absent
+ansible-playbook -i inventories/private-isu measurement/slp.yml           -e measure_hosts=app -e @envs/private-isu.yml -e measure_state=absent
+ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml -e measure_hosts=app -e @envs/private-isu.yml -e measure_state=absent
+ansible-playbook -i inventories/private-isu measurement/rotate.yml        -e measure_hosts=app -e @envs/private-isu.yml -e measure_state=absent
 ```
 
 - alp: 計測用 site conf をバックアップから復元（バックアップが無ければ削除）、`log_format.conf` と `alp` を削除
@@ -266,43 +287,45 @@ ansible-playbook -i hosts measurement/rotate.yml        -e measure_hosts=isu-app
 
 ## 変数一覧
 
-`measurement/vars.yml` の既定値。`-e key=value` で上書きできる。
+`measurement/vars.yml` の**プラットフォーム既定値**。環境差分は `envs/<env>.yml` に
+書いて `-e @envs/<env>.yml` で上書きする（[環境の差し替え](measurement-architecture.md#環境の差し替え)）。
+`-e key=value` でも上書きできる。
 
-| 変数 | 既定値 | 説明 |
-| --- | --- | --- |
-| `measure_state` | `present` | `present`（導入）/ `absent`（除去） |
-| `measure_arch` | `amd64` | バイナリのアーキテクチャ |
-| `nginx_conf_dir` | `/etc/nginx` | nginx の設定ディレクトリ |
-| `nginx_log_format_path` | `/etc/nginx/conf.d/log_format.conf` | LTSV の log_format 配置先 |
-| `nginx_site_name` | `isucon` | 対象サイト設定名（拡張子なし） |
-| `nginx_site_path` | `/etc/nginx/sites-available/isucon.conf` | 対象サイト設定 |
-| `nginx_site_backup` | `<site_path>.measure.orig` | 元設定の退避先 |
-| `nginx_access_log` | `/var/log/nginx/access.log` | アクセスログ |
-| `nginx_listen` | `80` | listen ポート |
-| `client_max_body_size` | `10m` | アップロード上限 |
-| `app_public_dir` | `/home/isucon/webapp/public/` | 静的ファイルのルート |
-| `app_port` | `8080` | アプリの待ち受けポート |
-| `mysql_conf_dir` | `/etc/mysql/mysql.conf.d` | MySQL 設定ディレクトリ |
-| `mysql_slowlog_conf` | `.../zz-slowlog.cnf` | スロークエリ設定 |
-| `mysql_slowlog_file` | `/var/log/mysql/mysql-slow.log` | スロークエリログ |
-| `mysql_slowlog_long_query_time` | `0.05` | 記録する閾値（秒） |
-| `mysql_service_name` | `mysql` | MySQL のサービス名 |
-| `rotate_script_path` | `/usr/local/bin/rotate-measure-logs.sh` | ローテーションスクリプト |
-| `pprotein_agent_path` | `/usr/local/bin/pprotein-agent` | エージェントのバイナリ |
-| `pprotein_agent_service_name` | `pprotein-agent` | systemd サービス名 |
-| `pprotein_agent_service_path` | `/etc/systemd/system/pprotein-agent.service` | systemd ユニット |
-| `pprotein_agent_port` | `19000` | エージェントの listen ポート |
-| `pprotein_agent_user` | `root` | サービスの実行ユーザ |
-| `pprotein_work_dir` | `/home/isucon` | 作業ディレクトリ |
-| `pprotein_git_repository` | `/home/isucon` | ソース表示に使う git リポジトリ |
-| `pprotein_extract_dir` | `/tmp/pprotein` | tarball の展開先（一時） |
-| `alp_ver` | `v1.0.21` | alp のバージョン（alp.yml 内） |
-| `slp_ver` | `v0.2.1` | slp のバージョン（slp.yml 内） |
-| `pprotein_ver` | `v1.2.5` | pprotein のバージョン（pprotein-agent.yml 内）。配布元は `seachimes/pprotein` |
+| 変数 | 既定値 | 説明 | 環境差分の例 |
+| --- | --- | --- | --- |
+| `measure_state` | `present` | `present`（導入）/ `absent`（除去） | |
+| `measure_arch` | `amd64` | バイナリのアーキテクチャ | |
+| `nginx_conf_dir` | `/etc/nginx` | nginx の設定ディレクトリ | |
+| `nginx_log_format_path` | `/etc/nginx/conf.d/log_format.conf` | LTSV の log_format 配置先 | |
+| `nginx_site_name` | `isucon` | 対象サイト設定名（拡張子なし） | private-isu: `isucon` / isucon14: `isuride` |
+| `nginx_site_path` | `/etc/nginx/sites-available/isucon.conf` | 対象サイト設定 | |
+| `nginx_site_backup` | `<site_path>.measure.orig` | 元設定の退避先 | |
+| `nginx_access_log` | `/var/log/nginx/access.log` | アクセスログ | |
+| `nginx_listen` | `80` | listen ポート | |
+| `client_max_body_size` | `10m` | アップロード上限 | |
+| `app_public_dir` | `/home/isucon/webapp/public/` | 静的ファイルのルート | private-isu: `/home/isucon/private_isu/webapp/public/` |
+| `app_port` | `8080` | アプリの待ち受けポート | |
+| `mysql_conf_dir` | `/etc/mysql/mysql.conf.d` | MySQL 設定ディレクトリ | |
+| `mysql_slowlog_conf` | `.../zz-slowlog.cnf` | スロークエリ設定 | |
+| `mysql_slowlog_file` | `/var/log/mysql/mysql-slow.log` | スロークエリログ | |
+| `mysql_slowlog_long_query_time` | `0.05` | 記録する閾値（秒） | |
+| `mysql_service_name` | `mysql` | MySQL のサービス名 | |
+| `rotate_script_path` | `/usr/local/bin/rotate-measure-logs.sh` | ローテーションスクリプト | |
+| `pprotein_agent_path` | `/usr/local/bin/pprotein-agent` | エージェントのバイナリ | |
+| `pprotein_agent_service_name` | `pprotein-agent` | systemd サービス名 | |
+| `pprotein_agent_service_path` | `/etc/systemd/system/pprotein-agent.service` | systemd ユニット | |
+| `pprotein_agent_port` | `19000` | エージェントの listen ポート | |
+| `pprotein_agent_user` | `root` | サービスの実行ユーザ | |
+| `pprotein_work_dir` | `/home/isucon` | 作業ディレクトリ | |
+| `pprotein_git_repository` | `/home/isucon` | ソース表示に使う git リポジトリ | private-isu: `/home/isucon/private_isu` / isucon14: `/home/isucon/webapp` |
+| `pprotein_extract_dir` | `/tmp/pprotein` | tarball の展開先（一時） | |
+| `alp_ver` | `v1.0.21` | alp のバージョン（alp.yml 内） | |
+| `slp_ver` | `v0.2.1` | slp のバージョン（slp.yml 内） | |
+| `pprotein_ver` | `v1.2.5` | pprotein のバージョン（pprotein-agent.yml 内）。配布元は `seachimes/pprotein` | |
 
 ## 注意
 
-- `measure_hosts` は必須。指定しないと `hosts` が解決できずエラーになる。
+- `measure_hosts` は必須。指定しないと inventory の対象グループが解決できずエラーになる。
 - alp 導入時、site conf は丸ごと置き換わる。静的配信や別 location がある場合は
   `templates/etc/nginx/sites-available/isucon.measure.conf.j2` を環境に合わせて編集する。
 - slp 導入・除去では MySQL を再起動する。接続断が許容されるタイミングで実行する。
