@@ -1,0 +1,18 @@
+[Unit]
+Description=pprotein
+Documentation=https://github.com/{{ pprotein_repo }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ pprotein_server_work_dir }}
+Environment=PORT={{ pprotein_server_port }}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart={{ pprotein_server_bin_path }}
+Restart=always
+RestartSec=5
+User={{ pprotein_server_user }}
+
+[Install]
+WantedBy=multi-user.target

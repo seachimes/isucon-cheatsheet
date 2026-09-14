@@ -1,2 +1,6 @@
 .claude
 .serena
+
+# Ansible: 環境固有の inventory
+ansible/hosts
+*.retry

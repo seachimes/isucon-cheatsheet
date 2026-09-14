@@ -1,0 +1,35 @@
+---
+# pprotein サーバ（Akamai/Linode）の初期構築。一度だけ実行する。
+# ホストの OS 依存（graphviz など）を整える。
+# cloudflared（Cloudflare Tunnel）は Terraform（pprotein-infra）の cloud-init が導入済み。
+# アプリ（pprotein / alp / slp）の配置と更新は deploy.yml が担当する。
+#
+#   構築: ansible-playbook -i hosts pprotein-server/bootstrap.yml -e pprotein_server_hosts=pprotein_server
+#
+# 前提:
+#   - Terraform（pprotein-infra）でインスタンス + cloud-init が適用済み。
+#     cloud-init が cloudflared を導入し Tunnel を確立している。
+#   - SSH は Cloudflare Tunnel（cloudflared access ssh）経由で到達できること。
+- hosts: "{{ pprotein_server_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  tasks:
+    # ---- cloud-init の確認 ----
+    - name: cloudflared（cloud-init 管理）が稼働していることを確認
+      command: systemctl is-active cloudflared-pprotein
+      register: cloudflared_active
+      changed_when: false
+      failed_when: cloudflared_active.stdout != "active"
+
+    # ---- OS 依存 ----
+    - name: 依存パッケージを導入（graphviz など）
+      apt:
+        name:
+          - graphviz
+          - curl
+          - ca-certificates
+        state: present
+        update_cache: true
+        cache_valid_time: 3600

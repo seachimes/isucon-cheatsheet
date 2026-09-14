@@ -1,0 +1,35 @@
+---
+# pprotein サーバ（Akamai/Linode）導入の共通変数。
+# すべて `-e key=value` の extra-vars で上書きできる。
+
+# present: 導入 / absent: 除去
+pprotein_server_state: present
+
+# ---- 配布物（GitHub Release） ----
+pprotein_repo: seachimes/pprotein
+pprotein_ver: v1.2.5
+# リリース資産のファイル名は v なしのバージョン（例: pprotein_1.2.5_linux_amd64.tar.gz）
+pprotein_archive_ver: "{{ pprotein_ver | regex_replace('^v', '') }}"
+pprotein_arch: amd64
+
+# ---- pprotein 本体 ----
+pprotein_server_bin_path: /usr/local/bin/pprotein
+pprotein_server_service_name: pprotein
+pprotein_server_service_path: /etc/systemd/system/pprotein.service
+pprotein_server_port: 9000
+pprotein_server_work_dir: /opt/pprotein
+pprotein_server_data_dir: /opt/pprotein/data
+# サービスの実行ユーザー。ログ/データの権限を避けるため root で動かす。
+pprotein_server_user: root
+pprotein_server_group: root
+# tarball と展開先（一時）。バージョンごとに分けて再実行を冪等にする。
+pprotein_server_tmp_archive: "/tmp/pprotein-{{ pprotein_ver }}.tar.gz"
+pprotein_server_extract_dir: "/tmp/pprotein-{{ pprotein_ver }}"
+
+# cloudflared（Cloudflare Tunnel）は Terraform（pprotein-infra）の cloud-init が
+# 導入する。Ansible は関与しない。
+
+# ---- 解析ツール（pprotein サーバ側で実行する） ----
+# measurement/vars.yml の alp_ver / slp_ver と揃える。
+alp_ver: v1.0.21
+slp_ver: v0.2.1
