@@ -11,6 +11,7 @@ pprotein 本体（UI + 収集サーバ）を Akamai/Linode 上で Ansible によ
 - `deploy.yml` … アプリの配置と更新。バージョンを上げたら繰り返し実行する。
 
 - 競技用サーバ側の `pprotein-agent` は既存の [計測ツール導入](measurement-tools.md#pprotein-agent-の導入) を参照。
+- 全体像（リリース戦略・サーバ/エージェント/EC2/VPC の関係）は [architecture.md](architecture.md) を参照。
 - 本ドキュメントは**pprotein サーバ（別ホスト）**の導入を扱う。
 
 ## 前提（Terraform 側で完了していること）
