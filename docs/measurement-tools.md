@@ -9,7 +9,7 @@ Ansible の独立 playbook として実行する。`playbooks.yml` からは imp
 | --- | --- | --- |
 | [alp](https://github.com/tkuchiki/alp) | nginx のアクセスログ（LTSV）を解析し、URI ごとの本数・レスポンスタイム・ボトルネックを可視化する | nginx の `access_log` を LTSV 形式にする |
 | [slp](https://github.com/tkuchiki/slp) | MySQL のスロークエリログを解析し、重いクエリを可視化する | MySQL のスロークエリログを有効化する |
-| [pprotein-agent](https://github.com/kaz/pprotein) | nginx / MySQL のログや pprof を pprotein サーバへ提供するエージェント | alp / slp 相当のログ設定（LTSV・スロークエリログ） |
+| [pprotein-agent](https://github.com/seachimes/pprotein) | nginx / MySQL のログや pprof を pprotein サーバへ提供するエージェント | alp / slp 相当のログ設定（LTSV・スロークエリログ） |
 | rotate-measure-logs.sh | ベンチ前後に計測ログを退避し、計測区間ごとのログを分離する | alp / slp を導入済みであること |
 
 ## ディレクトリ構成
@@ -157,6 +157,10 @@ slp my print-output-options
 収集できるようにする。pprotein 本体（サーバ）は別ホストに置き、競技用サーバとは
 SSH ポートフォワーディングで接続する運用を想定する。
 
+> 配布元はフォークの [seachimes/pprotein](https://github.com/seachimes/pprotein)（`v1.2.5`）。
+> `pprotein-agent.yml` は配布元とバージョンをサーバ側と揃えてある。
+> pprotein サーバ本体の導入は [pprotein-server.md](pprotein-server.md) を参照。
+
 ### 手順
 
 ```sh
@@ -294,7 +298,7 @@ ansible-playbook -i hosts measurement/rotate.yml        -e measure_hosts=isu-app
 | `pprotein_extract_dir` | `/tmp/pprotein` | tarball の展開先（一時） |
 | `alp_ver` | `v1.0.21` | alp のバージョン（alp.yml 内） |
 | `slp_ver` | `v0.2.1` | slp のバージョン（slp.yml 内） |
-| `pprotein_ver` | `v1.2.4` | pprotein のバージョン（pprotein-agent.yml 内） |
+| `pprotein_ver` | `v1.2.5` | pprotein のバージョン（pprotein-agent.yml 内）。配布元は `seachimes/pprotein` |
 
 ## 注意
 

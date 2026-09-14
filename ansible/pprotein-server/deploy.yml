@@ -1,0 +1,198 @@
+---
+# pprotein サーバ（Akamai/Linode）のアプリ配置と更新。
+# 繰り返し実行してよい（バージョン更新は vars.yml を書き換えて再実行）。
+# ホスト内部の前提（依存・cloudflared）は bootstrap.yml が担当する。
+#
+#   配置/更新: ansible-playbook -i hosts pprotein-server/deploy.yml -e pprotein_server_hosts=pprotein_server
+#   除去:      ansible-playbook -i hosts pprotein-server/deploy.yml -e pprotein_server_hosts=pprotein_server -e pprotein_server_state=absent
+#
+# 前提:
+#   - bootstrap.yml を先に実行済みであること（cloudflared が稼働していること）。
+#   - SSH は Cloudflare Tunnel（cloudflared access ssh）経由で到達できること。
+#   - pprotein リポジトリで `v*` タグが push され、Release が公開済みであること。
+- hosts: "{{ pprotein_server_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  handlers:
+    - name: pprotein を再起動
+      systemd:
+        name: "{{ pprotein_server_service_name }}"
+        state: restarted
+
+  tasks:
+    # ---- 解析ツール（pprotein サーバ側で実行する） ----
+    - name: 展開ディレクトリを作成（alp / slp）
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "/tmp/alp-{{ alp_ver }}"
+        - "/tmp/slp-{{ slp_ver }}"
+      when: pprotein_server_state == 'present'
+
+    - name: alp をダウンロード
+      get_url:
+        url: "https://github.com/tkuchiki/alp/releases/download/{{ alp_ver }}/alp_linux_{{ pprotein_arch }}.tar.gz"
+        dest: "/tmp/alp-{{ alp_ver }}.tar.gz"
+        force: false
+      retries: 10
+      delay: 3
+      when: pprotein_server_state == 'present'
+
+    - name: alp を展開
+      unarchive:
+        src: "/tmp/alp-{{ alp_ver }}.tar.gz"
+        dest: "/tmp/alp-{{ alp_ver }}"
+        remote_src: true
+        creates: "/tmp/alp-{{ alp_ver }}/alp"
+      when: pprotein_server_state == 'present'
+
+    - name: alp を /usr/local/bin へ配置
+      copy:
+        src: "/tmp/alp-{{ alp_ver }}/alp"
+        dest: /usr/local/bin/alp
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: pprotein_server_state == 'present'
+
+    - name: slp をダウンロード
+      get_url:
+        url: "https://github.com/tkuchiki/slp/releases/download/{{ slp_ver }}/slp_linux_{{ pprotein_arch }}.tar.gz"
+        dest: "/tmp/slp-{{ slp_ver }}.tar.gz"
+        force: false
+      retries: 10
+      delay: 3
+      when: pprotein_server_state == 'present'
+
+    - name: slp を展開
+      unarchive:
+        src: "/tmp/slp-{{ slp_ver }}.tar.gz"
+        dest: "/tmp/slp-{{ slp_ver }}"
+        remote_src: true
+        creates: "/tmp/slp-{{ slp_ver }}/slp"
+      when: pprotein_server_state == 'present'
+
+    - name: slp を /usr/local/bin へ配置
+      copy:
+        src: "/tmp/slp-{{ slp_ver }}/slp"
+        dest: /usr/local/bin/slp
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: pprotein_server_state == 'present'
+
+    # ---- pprotein 本体 ----
+    - name: pprotein をダウンロード
+      get_url:
+        url: "https://github.com/{{ pprotein_repo }}/releases/download/{{ pprotein_ver }}/pprotein_{{ pprotein_archive_ver }}_linux_{{ pprotein_arch }}.tar.gz"
+        dest: "{{ pprotein_server_tmp_archive }}"
+        force: false
+      retries: 10
+      delay: 3
+      when: pprotein_server_state == 'present'
+
+    - name: pprotein の展開ディレクトリを作成
+      file:
+        path: "{{ pprotein_server_extract_dir }}"
+        state: directory
+        mode: "0755"
+      when: pprotein_server_state == 'present'
+
+    - name: pprotein を展開
+      unarchive:
+        src: "{{ pprotein_server_tmp_archive }}"
+        dest: "{{ pprotein_server_extract_dir }}"
+        remote_src: true
+        creates: "{{ pprotein_server_extract_dir }}/pprotein"
+      when: pprotein_server_state == 'present'
+
+    - name: pprotein を /usr/local/bin へ配置
+      copy:
+        src: "{{ pprotein_server_extract_dir }}/pprotein"
+        dest: "{{ pprotein_server_bin_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: pprotein_server_state == 'present'
+      notify: pprotein を再起動
+
+    - name: 作業ディレクトリを作成
+      file:
+        path: "{{ pprotein_server_work_dir }}"
+        state: directory
+        owner: "{{ pprotein_server_user }}"
+        group: "{{ pprotein_server_group }}"
+        mode: "0755"
+      when: pprotein_server_state == 'present'
+
+    - name: データディレクトリを作成
+      file:
+        path: "{{ pprotein_server_data_dir }}"
+        state: directory
+        owner: "{{ pprotein_server_user }}"
+        group: "{{ pprotein_server_group }}"
+        mode: "0755"
+      when: pprotein_server_state == 'present'
+
+    - name: pprotein の systemd ユニットを配置
+      template:
+        src: ../templates/etc/systemd/system/pprotein.service.j2
+        dest: "{{ pprotein_server_service_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when: pprotein_server_state == 'present'
+      notify: pprotein を再起動
+
+    - name: systemd をリロード（ユニット反映）
+      systemd:
+        daemon_reload: true
+      changed_when: false
+      when: pprotein_server_state == 'present'
+
+    - name: pprotein を起動（自動起動を有効化）
+      systemd:
+        name: "{{ pprotein_server_service_name }}"
+        enabled: true
+        state: started
+      when: pprotein_server_state == 'present'
+
+    # ---- 除去 ----
+    - name: pprotein を停止・自動起動を無効化
+      systemd:
+        name: "{{ pprotein_server_service_name }}"
+        enabled: false
+        state: stopped
+      failed_when: false
+      when: pprotein_server_state == 'absent'
+
+    - name: pprotein の systemd ユニットを削除
+      file:
+        path: "{{ pprotein_server_service_path }}"
+        state: absent
+      when: pprotein_server_state == 'absent'
+
+    - name: systemd をリロード
+      systemd:
+        daemon_reload: true
+      changed_when: false
+      when: pprotein_server_state == 'absent'
+
+    - name: バイナリを削除
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ pprotein_server_bin_path }}"
+        - /usr/local/bin/alp
+        - /usr/local/bin/slp
+      when: pprotein_server_state == 'absent'
+
+    # データ（/opt/pprotein/data）は保持する。
