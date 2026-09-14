@@ -1,0 +1,12 @@
+# private-isu の競技環境（EC2）。使うときだけ差し替える。
+#
+#   cp inventories/examples/private-isu.hosts inventories/private-isu/hosts
+#   ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml \
+#     -e measure_hosts=app -e @envs/private-isu.yml
+#
+# ホスト名は ~/.ssh/config の Host と揃える（鍵・ユーザはそこで解決）。
+[app]
+isu-app
+
+[bench]
+isu-bench

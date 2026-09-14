@@ -3,8 +3,8 @@
 # 繰り返し実行してよい（バージョン更新は vars.yml を書き換えて再実行）。
 # ホスト内部の前提（依存・cloudflared）は bootstrap.yml が担当する。
 #
-#   配置/更新: ansible-playbook -i hosts pprotein-server/deploy.yml -e pprotein_server_hosts=pprotein_server
-#   除去:      ansible-playbook -i hosts pprotein-server/deploy.yml -e pprotein_server_hosts=pprotein_server -e pprotein_server_state=absent
+#   配置/更新: ansible-playbook -i inventories/pprotein_server pprotein-server/deploy.yml -e pprotein_server_hosts=pprotein_server
+#   除去:      ansible-playbook -i inventories/pprotein_server pprotein-server/deploy.yml -e pprotein_server_hosts=pprotein_server -e pprotein_server_state=absent
 #
 # 前提:
 #   - bootstrap.yml を先に実行済みであること（cloudflared が稼働していること）。

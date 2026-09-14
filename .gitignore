@@ -1,6 +1,7 @@
 .claude
 .serena
 
-# Ansible: 環境固有の inventory
+# Ansible: 環境固有の inventory（*.example のみコミット）
 ansible/hosts
+ansible/inventories/*/hosts
 *.retry

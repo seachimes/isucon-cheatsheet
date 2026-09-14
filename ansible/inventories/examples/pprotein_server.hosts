@@ -1,0 +1,11 @@
+# 計測基盤の共有サーバ（Akamai/Linode）。全環境で1台を使い回す。
+# SSH は Cloudflare Tunnel 経由（cloudflared access ssh）。
+#
+#   cp inventories/examples/pprotein_server.hosts inventories/pprotein_server/hosts
+#   ansible-playbook -i inventories/pprotein_server pprotein-server/deploy.yml \
+#     -e pprotein_server_hosts=pprotein_server
+#
+# 実ホスト名は Terraform の pprotein_ssh_hostname 出力に合わせる。
+# 秘密鍵は pprotein-infra の ssh_public_key に対応するもの。
+[pprotein_server]
+pprotein ansible_host=pprotein-ssh.<your-zone> ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_akamai

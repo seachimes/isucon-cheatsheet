@@ -11,7 +11,7 @@ pprotein 本体（UI + 収集サーバ）を Akamai/Linode 上で Ansible によ
 - `deploy.yml` … アプリの配置と更新。バージョンを上げたら繰り返し実行する。
 
 - 競技用サーバ側の `pprotein-agent` は既存の [計測ツール導入](measurement-tools.md#pprotein-agent-の導入) を参照。
-- 全体像（リリース戦略・サーバ/エージェント/EC2/VPC の関係）は [architecture.md](architecture.md) を参照。
+- 全体像（リリース戦略・サーバ/エージェント/EC2/VPC の関係）は [measurement-architecture.md](measurement-architecture.md) を参照。
 - 本ドキュメントは**pprotein サーバ（別ホスト）**の導入を扱う。
 
 ## 前提（Terraform 側で完了していること）
@@ -44,7 +44,9 @@ terraform -chdir=pprotein-infra/terraform/cloudflare output -raw pprotein_tunnel
 ```
 ansible/
 ├── ansible.cfg
-├── hosts.example                                   # inventory のサンプル
+├── inventories/
+│   ├── pprotein_server/hosts                       # 共有サーバの inventory（全環境共通）
+│   └── examples/pprotein_server.hosts              # 例（コピーして使う）
 ├── pprotein-server/
 │   ├── bootstrap.yml                               # 初期構築（一度だけ）
 │   ├── deploy.yml                                  # 配置/更新（繰り返し）
@@ -52,6 +54,9 @@ ansible/
 └── templates/etc/systemd/system/
     └── pprotein.service.j2
 ```
+
+> pprotein サーバは**全環境で1台を使い回す**（[measurement-architecture.md](measurement-architecture.md#環境の差し替え)）。
+> 競技環境ごとの差し替えは `inventories/<env>` と `envs/<env>.yml` で行い、サーバ側は触らない。
 
 cloudflared のユニットは `pprotein-infra/cloud-init/user-data-linode.yaml.tftpl` が生成する。
 
@@ -93,7 +98,11 @@ Host pprotein-ssh.example.com
 terraform -chdir=pprotein-infra/terraform/cloudflare output -raw pprotein_ssh_hostname
 ```
 
-inventory は `hosts.example` をコピーして対象ホストを書く（グループ `pprotein_server`）。
+inventory は `inventories/examples/pprotein_server.hosts` をコピーして対象ホストを書く（グループ `pprotein_server`）。
+
+```sh
+cp inventories/examples/pprotein_server.hosts inventories/pprotein_server/hosts
+```
 
 ```ini
 [pprotein_server]
@@ -148,15 +157,15 @@ cloudflared access ssh（service token を提示）
 cd ansible
 
 # 1) 初期構築（一度だけ・OS 依存）
-ansible-playbook -i hosts pprotein-server/bootstrap.yml \
+ansible-playbook -i inventories/pprotein_server pprotein-server/bootstrap.yml \
   -e pprotein_server_hosts=pprotein_server
 
 # 2) 配置/更新（バージョンを上げたら再実行）
-ansible-playbook -i hosts pprotein-server/deploy.yml \
+ansible-playbook -i inventories/pprotein_server pprotein-server/deploy.yml \
   -e pprotein_server_hosts=pprotein_server
 
 # 除去（データは保持）
-ansible-playbook -i hosts pprotein-server/deploy.yml \
+ansible-playbook -i inventories/pprotein_server pprotein-server/deploy.yml \
   -e pprotein_server_hosts=pprotein_server \
   -e pprotein_server_state=absent
 ```

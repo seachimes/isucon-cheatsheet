@@ -1,10 +1,13 @@
 ---
 # pprotein-agent の導入/除去。
 # playbooks.yml からは import しない（分離・手動実行）。
-# 対象ホストを必須指定する。
+# 対象ホスト（競技環境）を -i で、環境差分を -e @envs/<env>.yml で指定する。
 #
-#   導入: ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app
-#   除去: ansible-playbook -i hosts measurement/pprotein-agent.yml -e measure_hosts=isu-app -e measure_state=absent
+#   導入: ansible-playbook -i inventories/<env> measurement/pprotein-agent.yml -e measure_hosts=app -e @envs/<env>.yml
+#   除去: ansible-playbook -i inventories/<env> measurement/pprotein-agent.yml -e measure_hosts=app -e @envs/<env>.yml -e measure_state=absent
+#
+# 例: -i inventories/private-isu -e @envs/private-isu.yml
+#     -i inventories/isucon14   -e @envs/isucon14.yml
 #
 # 前提: nginx（LTSV）と MySQL（スロークエリログ）が計測用に設定されていること。
 #       alp.yml / slp.yml を先に流すか、同等の設定を入れておく。
