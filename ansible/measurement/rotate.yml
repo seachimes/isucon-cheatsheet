@@ -1,0 +1,25 @@
+---
+# 計測ログのローテーションスクリプトを配置（mv・自動採番）。playbooks.yml からは import しない。
+# 対象ホストを必須指定する。
+#
+#   導入: ansible-playbook -i hosts measurement/rotate.yml -e measure_hosts=isu-app
+#   除去: ansible-playbook -i hosts measurement/rotate.yml -e measure_hosts=isu-app -e measure_state=absent
+- hosts: "{{ measure_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: rotate-measure-logs.sh を配置
+      template:
+        src: ../templates/usr/local/bin/rotate-measure-logs.sh.j2
+        dest: "{{ rotate_script_path }}"
+        owner: root
+        mode: "0755"
+      when: measure_state == 'present'
+
+    - name: rotate-measure-logs.sh を削除
+      file:
+        path: "{{ rotate_script_path }}"
+        state: absent
+      when: measure_state == 'absent'

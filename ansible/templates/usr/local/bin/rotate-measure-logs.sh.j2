@@ -1,0 +1,23 @@
+#!/bin/bash
+# rotate-measure-logs.sh : 計測ログを mv + 自動採番で退避（reopen で開き直し）
+# ベンチの前に実行する → 前回分が access.log.N / mysql-slow.log.N に残る
+set -euo pipefail
+
+NGINX_ACCESS_LOG="{{ nginx_access_log }}"
+MYSQL_SLOWLOG="{{ mysql_slowlog_file }}"
+
+# nginx access.log → access.log.N（空いている連番を自動採番）
+if [ -f "$NGINX_ACCESS_LOG" ]; then
+  n=1
+  while [ -f "$NGINX_ACCESS_LOG.$n" ]; do n=$((n + 1)); done
+  mv "$NGINX_ACCESS_LOG" "$NGINX_ACCESS_LOG.$n"
+fi
+/usr/sbin/nginx -s reopen
+
+# mysql slow log → mysql-slow.log.N
+if [ -f "$MYSQL_SLOWLOG" ]; then
+  m=1
+  while [ -f "$MYSQL_SLOWLOG.$m" ]; do m=$((m + 1)); done
+  mv "$MYSQL_SLOWLOG" "$MYSQL_SLOWLOG.$m"
+fi
+mysql -e "SET GLOBAL slow_query_log=OFF; SET GLOBAL slow_query_log=ON;"

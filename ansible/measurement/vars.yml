@@ -1,0 +1,37 @@
+---
+# 計測ツール（alp / slp / ログローテーション）導入の共通変数。
+# すべて `-e key=value` の extra-vars で上書きできる。
+# 環境に合わせて書き換えるか、実行時に -e で渡すこと。
+
+# present: 導入 / absent: 除去
+measure_state: present
+
+# バイナリのアーキテクチャ（リリース tarball のサフィックス）
+measure_arch: amd64
+
+# ---- nginx（alp の前提） ----
+nginx_conf_dir: /etc/nginx
+nginx_log_format_path: "{{ nginx_conf_dir }}/conf.d/log_format.conf"
+# sites-available 配下の対象サイト設定名（拡張子 .conf を除く）
+nginx_site_name: isucon
+nginx_site_path: "{{ nginx_conf_dir }}/sites-available/{{ nginx_site_name }}.conf"
+# 計測用設定に差し替える前の元設定の退避先（除去時に復元する）
+nginx_site_backup: "{{ nginx_site_path }}.measure.orig"
+nginx_access_log: /var/log/nginx/access.log
+nginx_listen: "80"
+client_max_body_size: 10m
+# nginx が配信するアプリの公開ディレクトリ（<APP_DIR>/webapp/public/ など）
+app_public_dir: /home/isucon/webapp/public/
+# アプリケーションサーバの待ち受けポート
+app_port: 8080
+
+# ---- MySQL（slp の前提） ----
+mysql_conf_dir: /etc/mysql/mysql.conf.d
+mysql_slowlog_conf: "{{ mysql_conf_dir }}/zz-slowlog.cnf"
+mysql_slowlog_file: /var/log/mysql/mysql-slow.log
+# これ以上のクエリを記録する（秒）
+mysql_slowlog_long_query_time: 0.05
+mysql_service_name: mysql
+
+# ---- ログローテーション ----
+rotate_script_path: /usr/local/bin/rotate-measure-logs.sh

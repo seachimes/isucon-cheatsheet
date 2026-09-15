@@ -1,0 +1,64 @@
+---
+# SLP (SlowLog Profiler) の導入/除去。
+# playbooks.yml からは import しない（分離・手動実行）。
+# 対象ホストを必須指定する。
+#
+#   導入: ansible-playbook -i hosts measurement/slp.yml -e measure_hosts=isu-app
+#   除去: ansible-playbook -i hosts measurement/slp.yml -e measure_hosts=isu-app -e measure_state=absent
+#
+# 前提: MySQL が動作していること。導入時に MySQL を再起動する。
+- hosts: "{{ measure_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+  vars:
+    slp_ver: v0.2.1
+  tasks:
+    # ---- MySQL スロークエリログ（slp の前提） ----
+    - name: スロークエリログ設定を配置
+      template:
+        src: ../templates/etc/mysql/mysql.conf.d/zz-slowlog.cnf.j2
+        dest: "{{ mysql_slowlog_conf }}"
+        owner: root
+        mode: "0644"
+      when: measure_state == 'present'
+
+    - name: スロークエリログ設定を削除
+      file:
+        path: "{{ mysql_slowlog_conf }}"
+        state: absent
+      when: measure_state == 'absent'
+
+    - name: MySQL を再起動（スロークエリログ設定を反映）
+      service:
+        name: "{{ mysql_service_name }}"
+        state: restarted
+
+    # ---- slp バイナリ ----
+    - name: slp をダウンロード
+      get_url:
+        url: "https://github.com/tkuchiki/slp/releases/download/{{ slp_ver }}/slp_linux_{{ measure_arch }}.tar.gz"
+        dest: /tmp/slp.tar.gz
+      retries: 10
+      delay: 3
+      when: measure_state == 'present'
+
+    - name: slp を /usr/local/bin へ展開
+      unarchive:
+        src: /tmp/slp.tar.gz
+        dest: /usr/local/bin
+        remote_src: true
+      when: measure_state == 'present'
+
+    - name: slp に実行権限を付与
+      file:
+        path: /usr/local/bin/slp
+        mode: "0755"
+      when: measure_state == 'present'
+
+    - name: slp を削除
+      file:
+        path: /usr/local/bin/slp
+        state: absent
+      when: measure_state == 'absent'
