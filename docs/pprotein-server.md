@@ -22,7 +22,12 @@ pprotein 本体（UI + 収集サーバ）を Akamai/Linode 上で Ansible によ
     Cloudflare Tunnel を確立する。
 - Cloudflare Tunnel / DNS / Access（`pprotein-infra/terraform/cloudflare`）。
   - ingress は `http://localhost:9000`（UI）と `ssh://localhost:22`（管理・デプロイ）。
+  - agent トンネル（競技サーバ用）は**ホストごとに**作成（`agent_hosts = ["1","2","3"]`）。
 - 配布物は **GitHub Release**（`seachimes/pprotein`、タグ `v*`）。
+
+> **シークレット**: `ansible/secrets.yml`（gitignore 済み）に Access service token を置く。
+> `secrets.example.yml` をコピーして値（`terraform/cloudflare` の
+> `access_service_token_client_id` / `..._secret`）を記入する。
 
 > **鶏卵の解消**: Tunnel は cloudflared が上げるもので、Tunnel SSH で Ansible を流すには
 > 先に Tunnel が必要になる。そこで cloudflared は Ansible ではなく **cloud-init** が入れる。
@@ -126,11 +131,13 @@ cloudflared はこのトークンで edge に接続し、トンネル `pprotein`
 | ホスト名 | アプリ | ポリシー | 認証方式 |
 | --- | --- | --- | --- |
 | `pprotein.<zone>`（UI） | pprotein UI | `allow-members` | **SSO**（`allowed_emails` の email を含む） |
-| `pprotein-ssh.<zone>`（SSH） | pprotein SSH | `allow-deploy-service-token` | **service token**（`decision = non_identity`） |
-| `agent-ssh.<zone>`（agent SSH） | pprotein-agent SSH | 同上 | service token |
+| `pprotein-ssh.<zone>`（pprotein SSH） | pprotein SSH | `allow-deploy-service-token` | **service token**（`decision = non_identity`） |
+| `pprotein-agent-<label>.<zone>`（agent HTTP） | pprotein-agent-<label> | `bypass-server-ip` | **bypass + サーバ IP 許可** |
 
-- SSH は `non_identity` + `include { service_token = [deploy] }`。**`pprotein-deploy` service token
+- pprotein SSH は `non_identity` + `include { service_token = [deploy] }`。**`pprotein-deploy` service token
   （client id/secret）を持つ機械だけ**が通れる。
+- agent HTTP は collector がヘッダを送れず `cloudflared access tcp` も HTTP origin では
+  使えないため、**`bypass` + サーバの egress IP 許可**で保護する（許可外 IP は 403）。
 - これが `cloudflared access ssh` に渡す `TUNNEL_SERVICE_TOKEN_ID` / `TUNNEL_SERVICE_TOKEN_SECRET`。
 
 ### 3. SSH 認証（ssh → host）
@@ -220,7 +227,10 @@ https://github.com/{{ pprotein_repo }}/releases/download/{{ pprotein_ver }}/ppro
 | `alp_ver` | `v1.0.21` | measurement と揃える |
 | `slp_ver` | `v0.2.1` | measurement と揃える |
 
-cloudflared の変数（`cloudflared_ver` 等）は `pprotein-infra/terraform/akamai` 側にある。
+cloudflared（サーバ用 connector）の変数（`cloudflared_ver` 等）は
+`pprotein-infra/terraform/akamai` 側にある。agent 用は `measurement/vars.yml`。
+収集先は agent hostname（`https://pprotein-agent-<label>.<zone>/debug/...`）で、
+targets に登録する。
 
 ## systemd ユニット（pprotein）
 

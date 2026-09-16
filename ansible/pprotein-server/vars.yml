@@ -28,6 +28,9 @@ pprotein_server_extract_dir: "/tmp/pprotein-{{ pprotein_ver }}"
 
 # cloudflared（Cloudflare Tunnel）は Terraform（pprotein-infra）の cloud-init が
 # 導入する。Ansible は関与しない。
+# 競技サーバの agent は pprotein-agent-<label> トンネルで公開され、collector は
+# agent hostname を直接取得する（Access はサーバ IP 許可）。targets は
+# https://pprotein-agent-<label>.<zone>/debug/... を参照する。
 
 # ---- 解析ツール（pprotein サーバ側で実行する） ----
 # measurement/vars.yml の alp_ver / slp_ver と揃える。

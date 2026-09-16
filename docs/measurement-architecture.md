@@ -71,7 +71,7 @@ flowchart TB
   edge --> access --> cfds
   cfds --- ppro
 
-  ppro -->|"収集: agent へ HTTP<br/>(SSH ポートフォワード / agent tunnel)"| app
+  ppro -->|"収集: cloudflared access tcp<br/>(pprotein-agent トンネル経由)"| app
   subnet --- igw
 ```
 
@@ -108,7 +108,9 @@ flowchart TB
 | --- | --- | --- | --- | --- |
 | pprotein（サーバ） | Linode（Akamai） | 9000 | UI + 収集サーバ。alp/slp/graphviz で解析 | `pprotein-server/deploy.yml` |
 | cloudflared（サーバ） | Linode | — | Tunnel で UI/SSH を公開 | cloud-init（`pprotein-infra`） |
+| cloudflared-access（サーバ） | Linode | 19001 | agent トンネルへ Access 経由で転送 | `pprotein-server/bootstrap.yml` |
 | pprotein-agent | EC2（競技用サーバ） | 19000 | nginx/MySQL ログ・pprof を提供 | `measurement/pprotein-agent.yml` |
+| cloudflared-agent | EC2（競技用サーバ） | — | agent を outbound でトンネル接続 | `measurement/cloudflared-agent.yml` |
 | ベンチマーカー | EC2 | — | 負荷生成（計測対象外） | 環境ごと（例: private-isu provisioning） |
 
 - エージェントは競技用サーバに**同居**し、ログファイルを読むため `root` で動く。
@@ -150,18 +152,44 @@ ansible-playbook -i inventories/isucon14 measurement/pprotein-agent.yml \
 isucon14 / isucon2026 なども同様に、競技用サーバ（エージェント同居）とベンチマーカーが
 あれば、inventory と環境プロファイルを差し替えるだけで計測基盤を適用できる。
 
-pprotein サーバは別クラウド（Linode）にあるため、エージェントへの収集経路が必要。
+pprotein サーバは別クラウド（Linode）にあり、**ISUCON のポリシー上 EC2 の inbound は
+開けられない**。そのため収集経路は **agent トンネル**（outbound のみ）で作る。
 
-- **SSH ポートフォワーディング**（現行の想定）: サーバから競技用サーバへトンネルを張り、
-  `localhost:19001 -> agent:19000` のように転送して targets に登録する。
-- **agent tunnel**（`pprotein-infra` の任意機能 `create_agent_tunnel`）: 競技用サーバに
-  cloudflared を入れて `agent.<zone> -> http://localhost:19000` を Tunnel 公開する。
-  この HTTP エンドポイントは Access の外にある（collector が service token ヘッダを
-  送れないため）ので、**ホスト名を秘密として扱う**。
+- Terraform（`pprotein-infra`）が **ホストごとに** agent トンネルを作成する
+  （`agent_hosts = ["1","2","3"]` → `pprotein-agent-1/2/3.<zone>`）。
+  1トンネルに複数 connector を張ると Cloudflare がラウンドロビンするため、
+  ホストごとにトンネルを分ける。
+- 競技用サーバ（EC2）: `measurement/cloudflared-agent.yml` が cloudflared を導入し、
+  自分のトンネルの `agent_tunnel_token` で **outbound 接続**する（inbound 不要）。
+  inventory の `pprotein_agent_label` でトークンを選ぶ。
+- pprotein サーバ（Linode）: collector が **agent hostname を直接取得**する
+  （`https://pprotein-agent-<label>.<zone>/debug/...`）。
+- Access は **`bypass` + IP 許可**（サーバの egress IPv4/IPv6）。`Allow` + IP は
+  identity ログインに飛ばされるため機械アクセスには使えない。
+
+```
+[pprotein サーバ]                                          [競技用サーバ (EC2)]
+targets → https://pprotein-agent-<label>.<zone>/debug/...    pprotein-agent :19000
+   │  （Access: bypass + サーバ IP 許可）                      ↑ localhost
+   └── Cloudflare Edge ── pprotein-agent-<label> トンネル ── cloudflared-agent（outbound）
+```
+
+これにより **EC2 の inbound を一切開けず**、サーバ側は固定の
+`pprotein-agent-<label>.<zone>` を見るだけでよい（環境差し替えは EC2 側の connector 設置のみ）。
+
+> 補足: collector は Access の service token ヘッダを送れない。また
+> `cloudflared access tcp` は `http://` origin では `bad handshake` になり使えない。
+> そのため agent HTTP は **IP 許可（bypass）** で保護し、collector が直接取得する。
+> 許可外 IP は 403、サーバからは 200 系（agent 応答）。
+> 動作確認: `curl https://pprotein-agent-1.<zone>/` → ローカルから 403 /
+> サーバから 404（agent の `/` 応答）。
 
 ## 認証の要点
 
 - **UI**: Cloudflare Access の SSO（`allowed_emails`）。
-- **SSH（サーバ / agent）**: Access の service token（`non_identity`）+ SSH 鍵。
-- **Tunnel connector**: トンネルごとの run token（サーバは cloud-init、agent は手動/Ansible）。
+- **pprotein SSH**: Access の service token（`non_identity`）+ SSH 鍵。
+- **agent HTTP**: Access の **`bypass` + サーバ IP 許可**（collector がヘッダを送れず
+  `access tcp` も使えないため）。
+- **Tunnel connector**: トンネルごとの run token（サーバは cloud-init、agent は
+  `measurement/cloudflared-agent.yml`。ホストごとに別トークン）。
 - 詳細は [pprotein-server.md の「認証」](pprotein-server.md#認証) を参照。

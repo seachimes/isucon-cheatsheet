@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare Tunnel (pprotein-agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStart={{ cloudflared_bin_path }} --no-autoupdate tunnel run --token-file {{ cloudflared_agent_token_path }}
+
+[Install]
+WantedBy=multi-user.target

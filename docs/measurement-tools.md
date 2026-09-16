@@ -34,17 +34,21 @@ ansible/
 │   ├── alp.yml                           # alp の導入/除去
 │   ├── slp.yml                           # slp の導入/除去
 │   ├── pprotein-agent.yml                # pprotein-agent の導入/除去
+│   ├── cloudflared-agent.yml             # 競技サーバの cloudflared（agent トンネル）
 │   └── rotate.yml                        # ローテーションスクリプトの配置/削除
 ├── pprotein-server/                      # 計測サーバ（全環境で共有）
 │   ├── bootstrap.yml
 │   ├── deploy.yml
 │   └── vars.yml
+├── secrets.example.yml                   # secret のサンプル（secrets.yml は gitignore）
 ├── files/
 │   └── etc/nginx/conf.d/log_format.conf          # LTSV の log_format
 └── templates/
     ├── etc/nginx/sites-available/isucon.measure.conf.j2   # 計測用 site conf
     ├── etc/mysql/mysql.conf.d/zz-slowlog.cnf.j2           # スロークエリ設定
     ├── etc/systemd/system/pprotein-agent.service.j2       # pprotein-agent の unit
+    ├── etc/systemd/system/cloudflared-agent.service.j2    # 競技サーバの cloudflared
+    ├── etc/systemd/system/cloudflared-access-agent.service.j2  # サーバ側 access tcp
     ├── etc/systemd/system/pprotein.service.j2             # pprotein サーバの unit
     └── usr/local/bin/rotate-measure-logs.sh.j2            # ローテーション
 ```
@@ -175,25 +179,41 @@ slp my print-output-options
 ## pprotein-agent の導入
 
 競技用サーバに常駐させ、nginx / MySQL のログや pprof を pprotein サーバから
-収集できるようにする。pprotein 本体（サーバ）は別ホストに置き、競技用サーバとは
-SSH ポートフォワーディングで接続する運用を想定する。
+収集できるようにする。pprotein 本体（サーバ）は別ホスト（Linode）に置き、
+**ISUCON のポリシー上 EC2 の inbound を開けられないため agent トンネルで接続**する。
 
 > 配布元はフォークの [seachimes/pprotein](https://github.com/seachimes/pprotein)（`v1.2.5`）。
 > `pprotein-agent.yml` は配布元とバージョンをサーバ側と揃えてある。
-> pprotein サーバ本体の導入は [pprotein-server.md](pprotein-server.md) を参照。
+> サーバ側の収集経路は [pprotein-server.md](pprotein-server.md) を参照。
 
 ### 手順
 
 ```sh
 cd ansible
-ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml -e measure_hosts=app -e @envs/private-isu.yml
+
+# 1) 競技サーバの cloudflared（agent トンネル接続・一度だけ）
+ansible-playbook -i inventories/private-isu measurement/cloudflared-agent.yml \
+  -e measure_hosts=app -e @envs/private-isu.yml
+
+# 2) pprotein-agent 本体
+ansible-playbook -i inventories/private-isu measurement/pprotein-agent.yml \
+  -e measure_hosts=app -e @envs/private-isu.yml
 ```
 
-この playbook は以下を行う。
+- `cloudflared-agent.yml` は **ホストごとの** `agent_tunnel_token`（`pprotein-infra` の
+  `agent_hosts` に対応）を使い、**outbound のみ**で Cloudflare に接続する。
+  トークンは `secrets.yml`（gitignore 済み）に `pprotein_agent_tunnel_tokens`（ラベル→トークン）
+  として置き、inventory の `pprotein_agent_label` で選ぶ。
+- `pprotein-agent.yml` は以下を行う。
 
 1. `pprotein-agent` バイナリをダウンロードして `/usr/local/bin` へ配置
 2. `pprotein-agent.service`（systemd ユニット）を配置
 3. サービスを起動し、自動起動を有効化
+
+> **同梱 agent との衝突**: ISUCON のイメージには pprotein が同梱されていることがある
+> （例: isucon14 の `isucon-pprotein-agent.service` が `127.0.0.1:19000` を使用）。
+> そのままだと `pprotein-agent` が `bind: address already in use` で再起動ループになる。
+> 同梱を使わず fork を使うなら、先に `systemctl disable --now isucon-pprotein-agent` する。
 
 ### 設定
 
@@ -208,22 +228,30 @@ systemd ユニットは次の環境変数を設定する。いずれも `measure
 
 ### 使い方
 
-pprotein サーバの `group/targets` に、競技用サーバのエージェントのエンドポイントを登録する。
+collector は agent hostname を直接取得する。targets は **ホストごとの agent hostname** を参照する。
 
 ```json
 [
-  { "Type": "httplog", "Label": "nginx", "URL": "http://<agent-host>:19000/debug/log/httplog", "Duration": 60 },
-  { "Type": "slowlog", "Label": "mysql", "URL": "http://<agent-host>:19000/debug/log/slowlog", "Duration": 60 },
-  { "Type": "pprof",   "Label": "app",   "URL": "http://<agent-host>:19000/debug/pprof/profile", "Duration": 60 }
+  { "Type": "httplog", "Label": "nginx-1", "URL": "https://pprotein-agent-1.<zone>/debug/log/httplog", "Duration": 60 },
+  { "Type": "slowlog", "Label": "mysql-1", "URL": "https://pprotein-agent-1.<zone>/debug/log/slowlog", "Duration": 60 },
+  { "Type": "pprof",   "Label": "app-1",   "URL": "https://pprotein-agent-1.<zone>/debug/pprof/profile", "Duration": 60 }
 ]
 ```
 
-別ホストの pprotein から収集する場合は、SSH ポートフォワーディングで経路を作る。
+経路:
 
-```sh
-# pprotein サーバ側から競技用サーバへ（19001 -> 19000 の例）
-ssh -L 19001:localhost:19000 -R 18080:localhost:80 isucon@<競技用サーバのIP>
 ```
+pprotein サーバ（collector）
+  → https://pprotein-agent-<label>.<zone>/debug/...（Access: bypass + サーバ IP 許可）
+  → Cloudflare Edge → pprotein-agent-<label> トンネル
+  → EC2 の cloudflared-agent（outbound）→ localhost:19000（pprotein-agent）
+```
+
+EC2 の inbound は不要。サーバ側は固定の `pprotein-agent-<label>.<zone>` を見るだけなので、
+環境を差し替えてもサーバ側の変更は不要（EC2 側に connector を入れるだけ）。
+
+> `/debug/log/httplog` は **tail ハンドラ**で、既定で「リクエスト後 30 秒間の新着行」を返す。
+> 単発の `curl` で 0 バイトでも異常ではない（その間にログが増えれば返る）。
 
 エージェントが公開するエンドポイント:
 

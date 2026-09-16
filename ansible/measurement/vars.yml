@@ -52,3 +52,13 @@ pprotein_work_dir: /home/isucon
 pprotein_git_repository: /home/isucon
 # ダウンロードした tarball の展開先（一時）
 pprotein_extract_dir: /tmp/pprotein
+
+# ---- cloudflared（競技サーバ側 connector: pprotein-agent トンネル） ----
+# EC2 の inbound を開けられないため、agent は outbound で Cloudflare に接続する。
+# トークンは pprotein-infra/terraform/cloudflare の agent_tunnel_token を流用する。
+cloudflared_ver: "2026.9.1"
+cloudflared_bin_path: /usr/local/bin/cloudflared
+cloudflared_config_dir: /etc/cloudflared
+cloudflared_agent_service_name: cloudflared-agent
+cloudflared_agent_token_path: /etc/cloudflared/agent-token
+cloudflared_tmp_path: "/tmp/cloudflared-{{ cloudflared_ver }}-linux-{{ measure_arch }}"

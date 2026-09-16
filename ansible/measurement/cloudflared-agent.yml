@@ -1,0 +1,128 @@
+---
+# 競技サーバ（EC2）に cloudflared を導入し、既存の pprotein-agent トンネルへ接続する。
+# EC2 の inbound を開けられないため、outbound のみで Cloudflare に接続する。
+# 一度だけ実行する（トークン・バージョン固定）。アプリ（pprotein-agent）は pprotein-agent.yml。
+#
+#   導入: ansible-playbook -i inventories/<env> measurement/cloudflared-agent.yml -e measure_hosts=app -e @envs/<env>.yml
+#   除去: ansible-playbook -i inventories/<env> measurement/cloudflared-agent.yml -e measure_hosts=app -e @envs/<env>.yml -e measure_state=absent
+#
+# 前提:
+#   - pprotein-infra で pprotein-agent トンネルが作成済み（create_agent_tunnel = true）。
+#   - secrets.yml に pprotein_agent_tunnel_token を設定済み。
+- hosts: "{{ measure_hosts }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vars.yml
+    - ../secrets.yml
+  vars:
+    # 各ホストに pprotein_agent_label を付ける（pprotein-infra の agent_hosts に対応）。
+    # INI inventory は数値を int に変換するため string に正規化する。
+    pprotein_agent_tunnel_token: "{{ pprotein_agent_tunnel_tokens[pprotein_agent_label | string] }}"
+  handlers:
+    - name: cloudflared-agent を再起動
+      systemd:
+        name: "{{ cloudflared_agent_service_name }}"
+        state: restarted
+
+  tasks:
+    - name: pprotein_agent_label が定義されているか確認
+      assert:
+        that: pprotein_agent_label is defined
+        fail_msg: "inventory のホストに pprotein_agent_label を設定してください（例: isucon14-app1 pprotein_agent_label=1）"
+
+    - name: cloudflared をダウンロード
+      get_url:
+        url: "https://github.com/cloudflare/cloudflared/releases/download/{{ cloudflared_ver }}/cloudflared-linux-{{ measure_arch }}"
+        dest: "{{ cloudflared_tmp_path }}"
+        mode: "0755"
+        force: false
+      retries: 10
+      delay: 3
+      when: measure_state == 'present'
+
+    - name: cloudflared を /usr/local/bin へ配置
+      copy:
+        src: "{{ cloudflared_tmp_path }}"
+        dest: "{{ cloudflared_bin_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: measure_state == 'present'
+      notify: cloudflared-agent を再起動
+
+    - name: 設定ディレクトリを作成
+      file:
+        path: "{{ cloudflared_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: measure_state == 'present'
+
+    - name: トンネルトークンを配置
+      copy:
+        content: "{{ pprotein_agent_tunnel_token }}\n"
+        dest: "{{ cloudflared_agent_token_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      when: measure_state == 'present'
+      notify: cloudflared-agent を再起動
+    - name: systemd ユニットを配置
+      template:
+        src: ../templates/etc/systemd/system/cloudflared-agent.service.j2
+        dest: "/etc/systemd/system/{{ cloudflared_agent_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      when: measure_state == 'present'
+      notify: cloudflared-agent を再起動
+
+    - name: systemd をリロード（ユニット反映）
+      systemd:
+        daemon_reload: true
+      changed_when: false
+      when: measure_state == 'present'
+
+    - name: cloudflared-agent を起動（自動起動を有効化）
+      systemd:
+        name: "{{ cloudflared_agent_service_name }}"
+        enabled: true
+        state: started
+      when: measure_state == 'present'
+
+    # ---- 除去 ----
+    - name: cloudflared-agent を停止・自動起動を無効化
+      systemd:
+        name: "{{ cloudflared_agent_service_name }}"
+        enabled: false
+        state: stopped
+      failed_when: false
+      when: measure_state == 'absent'
+
+    - name: systemd ユニットを削除
+      file:
+        path: "/etc/systemd/system/{{ cloudflared_agent_service_name }}.service"
+        state: absent
+      when: measure_state == 'absent'
+
+    - name: systemd をリロード
+      systemd:
+        daemon_reload: true
+      changed_when: false
+      when: measure_state == 'absent'
+
+    - name: cloudflared バイナリを削除
+      file:
+        path: "{{ cloudflared_bin_path }}"
+        state: absent
+      when: measure_state == 'absent'
+
+    - name: トンネルトークンを削除
+      file:
+        path: "{{ cloudflared_agent_token_path }}"
+        state: absent
+      when: measure_state == 'absent'

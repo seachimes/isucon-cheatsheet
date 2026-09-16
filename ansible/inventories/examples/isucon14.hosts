@@ -1,14 +1,15 @@
 # isucon14 の競技環境。
 #
 #   cp inventories/examples/isucon14.hosts inventories/isucon14/hosts
-#   ansible-playbook -i inventories/isucon14 measurement/pprotein-agent.yml \
+#   ansible-playbook -i inventories/isucon14 measurement/cloudflared-agent.yml \
 #     -e measure_hosts=app -e @envs/isucon14.yml
 #
 # ホスト名は ~/.ssh/config の Host と揃える（鍵・ユーザはそこで解決）。
+# pprotein_agent_label は pprotein-infra の agent_hosts（例: ["1","2","3"]）に対応。
 [app]
-isucon14-app1
-isucon14-app2
-isucon14-app3
+isucon14-app1 pprotein_agent_label=1
+isucon14-app2 pprotein_agent_label=2
+isucon14-app3 pprotein_agent_label=3
 
 [bench]
 isucon14-bench

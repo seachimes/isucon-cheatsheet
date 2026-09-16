@@ -1,7 +1,8 @@
 .claude
 .serena
 
-# Ansible: 環境固有の inventory（*.example のみコミット）
+# Ansible: 環境固有の inventory と secret（*.example のみコミット）
 ansible/hosts
 ansible/inventories/*/hosts
+ansible/secrets.yml
 *.retry

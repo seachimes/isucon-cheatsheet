@@ -1,7 +1,7 @@
 ---
 # pprotein サーバ（Akamai/Linode）の初期構築。一度だけ実行する。
 # ホストの OS 依存（graphviz など）を整える。
-# cloudflared（Cloudflare Tunnel）は Terraform（pprotein-infra）の cloud-init が導入済み。
+# cloudflared（Cloudflare Tunnel の connector）は Terraform（pprotein-infra）の cloud-init が導入済み。
 # アプリ（pprotein / alp / slp）の配置と更新は deploy.yml が担当する。
 #
 #   構築: ansible-playbook -i inventories/pprotein_server pprotein-server/bootstrap.yml -e pprotein_server_hosts=pprotein_server
